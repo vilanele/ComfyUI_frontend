@@ -52,7 +52,6 @@ const sounds: Record<string, string> = {
   collect: 'collect.mp3',
   echo: 'echo.mp3',
   glass: 'glass.mp3',
-  metallic: 'metallic.mp3',
   notification: 'notification.mp3'
 }
 
