@@ -1,4 +1,6 @@
 import { app } from '../../../scripts/app'
+import { api } from '../../../scripts/api'
+import { getExecutionIdsForSelectedNodes } from '@/utils/graphTraversalUtil'
 
 class ComfyConnector {
   overlay: HTMLElement
@@ -67,6 +69,36 @@ class ComfyConnector {
 
 app.registerExtension({
   name: 'Infinite Browser',
+  settings: [
+    {
+      // @ts-ignore
+      id: 'example.combo',
+      name: 'Example combo setting',
+      type: 'combo',
+      defaultValue: 'first',
+      options: [
+        { text: 'My first option', value: 'first' },
+        'My second option'
+      ],
+      attrs: {
+        editable: true,
+        filter: true
+      },
+      onChange: (newVal, oldVal) => {
+        console.log(`Setting was changed from ${oldVal} to ${newVal}`)
+      }
+    },
+    {
+      // @ts-ignore
+      id: 'example.text',
+      name: 'Example text setting',
+      type: 'text',
+      defaultValue: 'Foo',
+      onChange: (newVal, oldVal) => {
+        console.log(`Setting was changed from ${oldVal} to ${newVal}`)
+      }
+    }
+  ],
   async beforeRegisterNodeDef(nodeType) {
     if (nodeType.prototype.comfyClass === 'InfiniteImageLoader') {
       // optional
@@ -75,34 +107,74 @@ app.registerExtension({
   getCustomWidgets() {
     return {
       INFINITE_BROWSER(node) {
-        const url = node.widgets?.find((w) => w.name === 'url')
+        // const url = node.widgets?.find((w) => w.name === 'url')
+
+        const combo = node.addWidget(
+          'combo',
+          'browser',
+          'http://localhost:7866',
+          () => {
+            console.log(
+              'Execution id :',
+              getExecutionIdsForSelectedNodes([node])
+            )
+          },
+          {
+            values: [
+              'http://localhost:3000',
+              'http://monster:7888',
+              'http://infinite:7888'
+            ]
+          }
+        )
+
+        node.addWidget('string', 'url', '', () => {})
         const connectors = new Map<string, ComfyConnector>()
         connectors.set(
           'http://localhost:7866',
           new ComfyConnector('http://localhost:7866')
         )
         let current_connector = connectors.get('http://localhost:7866')
-        url!.callback = (newval) => {
+        combo!.callback = (newval) => {
           console.log(newval)
+          console.log(
+            'Execution id :',
+            // @ts-ignore
+            getExecutionIdsForSelectedNodes(node.graph.nodes)
+          )
           if (!connectors.has(newval)) {
             connectors.set(newval, new ComfyConnector(newval))
           }
           current_connector = connectors.get(newval)
         }
 
+        // node.addWidget('button', 'Add new browser', '', () => {})
         const browser = node.addWidget('button', 'names', '', () => {
           current_connector?.iframe.contentWindow?.postMessage(
             { hello: 'hello to you' },
             '*'
           )
-          window.addEventListener('message', (event) => {
+          window.addEventListener('message', async (event) => {
+            const blob = new Blob([event.data.buffer], {
+              type: 'application/octet-stream'
+            })
+
+            // Optional: wrap in a File to give it a filename
+            const file = new File([blob], event.data.name)
+            // api
+            const body = new FormData()
+            body.append('image', file)
+            // body.append('subfolder', 'infinite')
+            await api.fetchApi('/upload/image', {
+              method: 'POST',
+              body
+            })
+            browser.value = event.data.name
             console.log(event)
           })
-          browser.value = ['Bonjour', 'Au revoir']
           current_connector?.show()
         })
         browser.label = 'Open browser'
-        browser.value = ['Bonjour', 'Bonjour2']
 
         return { widget: browser }
       }
