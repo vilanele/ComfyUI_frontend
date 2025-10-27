@@ -1,65 +1,75 @@
+import { getNodeByExecutionId } from '@/utils/graphTraversalUtil'
 import { api } from '../../../scripts/api'
 import { app } from '../../../scripts/app'
+import type { LGraphNode } from '@/lib/litegraph/src/LGraphNode'
+import { sounds, default_sound, soundPath } from './sounds'
+
+type extendedNode = LGraphNode & {
+  executionId: string
+}
+type pauseEventDetail = { executionId: string }
+
+// @ts-ignore
+app.api.addEventListener('entering_pause_loop', (event) => {
+  const executionId: string = (event.detail as pauseEventDetail).executionId
+  const node: extendedNode = getNodeByExecutionId(
+    app.rootGraph!,
+    executionId
+  ) as extendedNode
+  node.executionId = executionId
+})
 
 app.registerExtension({
   name: 'Custom.Pause',
-  async beforeRegisterNodeDef(_nodeType, nodeData, _app) {
-    if (nodeData.name === 'Pause') {
-      if (nodeData?.input?.required) {
-        nodeData.input.required.continue = ['CONTINUE', {}]
-      }
+  settings: [
+    {
+      // @ts-ignore
+      id: 'Pause.CancelButton',
+      name: 'Add a cancel button to the node',
+      type: 'boolean',
+      defaultValue: false
     }
-  },
-  getCustomWidgets() {
-    return {
-      CONTINUE(node) {
-        const continue_btn = node.addWidget(
-          'button',
-          'continue',
-          '',
-          async () => {
-            const response: Response = await api.fetchApi('/continue', {
-              method: 'POST',
-              body: JSON.stringify({ node_id: node.id.toString() })
+  ],
+  async nodeCreated(node, app) {
+    if (node.comfyClass === 'Pause') {
+      const continue_btn = node.addWidget(
+        'button',
+        'continue',
+        '',
+        async () => {
+          const extendedNode = node as extendedNode
+          const response: Response = await api.fetchApi('/continue', {
+            method: 'POST',
+            body: JSON.stringify({
+              executionId: extendedNode.executionId
             })
-            if (!response.ok) {
-              app.extensionManager.toast.add({
-                severity: 'error',
-                summary: 'Pause execution node',
-                detail: 'Server error',
-                life: 3000
-              })
-            }
-          },
-          { canvasOnly: true, serialize: false }
-        )
+          })
+          if (response.status != 200) {
+            app.extensionManager.toast.add({
+              severity: 'error',
+              summary: 'Pause node',
+              detail: 'Internal server error',
+              life: 3000
+            })
+          }
+        },
+        { canvasOnly: true, serialize: false }
+      )
+      continue_btn.label = 'continue'
+      continue_btn.tooltip = 'Continue execution of following nodes'
 
-        return { widget: continue_btn }
+      if (app.extensionManager.setting.get('Pause.CancelButton')) {
+        const cancel_btn = node.addWidget('button', 'cancel', '', () => {
+          api.fetchApi('/interrupt', {
+            method: 'POST'
+          })
+        })
+        cancel_btn.label = 'cancel'
+        cancel_btn.tooltip = 'Cancel current run'
       }
     }
   }
 })
-
-const sounds: Record<string, string> = {
-  bonus: 'bonus.mp3',
-  bottle: 'bottle.mp3',
-  chime: 'chime.mp3',
-  pop: 'pop.wav',
-  cartoon: 'cartoon.mp3',
-  cowbell: 'cowbell.mp3',
-  positive: 'positive.mp3',
-  bike: 'bike.mp3',
-  collect: 'collect.mp3',
-  echo: 'echo.mp3',
-  glass: 'glass.mp3',
-  notification: 'notification.mp3'
-}
-
-const default_sound: string = 'notification'
-
-function soundPath(sound: string): string {
-  return '/extensions/ComfyUI-Notify/audio/'.concat(sounds[sound])
-}
 
 app.registerExtension({
   name: 'Custom.NotifyAudio',
@@ -74,53 +84,44 @@ app.registerExtension({
       tooltip: 'Wether to play the notifiation wound when changing'
     }
   ],
-  async beforeRegisterNodeDef(_nodeType, nodeData, _app) {
+  async nodeCreated(node) {
     if (
-      nodeData.name === 'NotifyAudioOutput' ||
-      nodeData.name === 'NotifyAudioPassthrough'
+      node.comfyClass === 'NotifyAudioOutput' ||
+      node.comfyClass === 'NotifyAudioPassthrough'
     ) {
-      if (nodeData?.input?.required) {
-        nodeData.input.required.sound = ['NOTIFY_AUDIO', {}]
-      }
-    }
-  },
-  getCustomWidgets() {
-    return {
-      NOTIFY_AUDIO(node) {
-        node.onExecuted = function () {
-          el.pause()
-          el.currentTime = 0
-          el.play()
-        }
-
-        const sound = node.addWidget(
-          'combo',
-          'sound',
-          default_sound,
-          (value) => {
-            el.pause()
-            el.src = api.fileURL(soundPath(value))
-            el.play()
-          },
-          {
-            values: Object.keys(sounds),
-            serialize: false,
-            canvasOnly: true
-          }
-        )
-
-        const el: HTMLAudioElement = document.createElement('audio')
-        el.preload = 'auto'
-        el.controls = true
+      node.onExecuted = function () {
+        el.pause()
         el.currentTime = 0
-        el.volume = 0.5
-        el.src = api.fileURL(soundPath(default_sound))
-        const player = node.addDOMWidget('player', 'player', el)
+        el.play()
+      }
 
-        node.onGraphConfigured = () => {
-          player.element.src = api.fileURL(soundPath(sound.value as string))
+      const sound = node.addWidget(
+        'combo',
+        'sound',
+        default_sound,
+        (value) => {
+          el.pause()
+          el.src = api.fileURL(soundPath(value))
+          el.play()
+        },
+        {
+          values: Object.keys(sounds),
+          serialize: false,
+          canvasOnly: true
         }
-        return { widget: sound }
+      )
+      sound.label = 'sound'
+
+      const el: HTMLAudioElement = document.createElement('audio')
+      el.preload = 'auto'
+      el.controls = true
+      el.currentTime = 0
+      el.volume = 0.5
+      el.src = api.fileURL(soundPath(default_sound))
+      const player = node.addDOMWidget('player', 'player', el)
+
+      node.onGraphConfigured = () => {
+        player.element.src = api.fileURL(soundPath(sound.value as string))
       }
     }
   }
@@ -135,9 +136,9 @@ app.registerExtension({
     ) {
       node.onExecuted = function () {
         app.extensionManager.toast.add({
+          summary: 'Toast node executed',
           // @ts-ignore
           severity: node.widgets?.find((w) => w.name === 'severity')?.value,
-          summary: 'Toast node executed',
           detail: node.widgets?.find((w) => w.name === 'detail')?.value,
           life: node.widgets?.find((w) => w.name === 'life')?.value as number
         })
