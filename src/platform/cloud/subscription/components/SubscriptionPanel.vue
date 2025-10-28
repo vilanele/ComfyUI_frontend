@@ -5,7 +5,10 @@
         <h2 class="text-2xl">
           {{ $t('subscription.title') }}
         </h2>
-        <TopbarBadges reverse-order />
+        <CloudBadge
+          reverse-order
+          background-color="var(--p-dialog-background)"
+        />
       </div>
 
       <div class="grow overflow-auto">
@@ -196,7 +199,7 @@ import Button from 'primevue/button'
 import TabPanel from 'primevue/tabpanel'
 import { computed, onMounted, ref } from 'vue'
 
-import TopbarBadges from '@/components/topbar/TopbarBadges.vue'
+import CloudBadge from '@/components/topbar/CloudBadge.vue'
 import { useFirebaseAuthActions } from '@/composables/auth/useFirebaseAuthActions'
 import SubscribeButton from '@/platform/cloud/subscription/components/SubscribeButton.vue'
 import SubscriptionBenefits from '@/platform/cloud/subscription/components/SubscriptionBenefits.vue'
