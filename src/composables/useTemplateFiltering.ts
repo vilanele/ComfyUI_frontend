@@ -1,9 +1,11 @@
 import { refDebounced } from '@vueuse/core'
 import Fuse from 'fuse.js'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Ref } from 'vue'
 
+import { useTelemetry } from '@/platform/telemetry'
 import type { TemplateInfo } from '@/platform/workflow/templates/types/template'
+import { debounce } from 'es-toolkit/compat'
 
 export function useTemplateFiltering(
   templates: Ref<TemplateInfo[]> | TemplateInfo[]
@@ -128,6 +130,17 @@ export function useTemplateFiltering(
     })
   })
 
+  const getVramMetric = (template: TemplateInfo) => {
+    if (
+      typeof template.vram === 'number' &&
+      Number.isFinite(template.vram) &&
+      template.vram > 0
+    ) {
+      return template.vram
+    }
+    return Number.POSITIVE_INFINITY
+  }
+
   const sortedTemplates = computed(() => {
     const templates = [...filteredByLicenses.value]
 
@@ -145,9 +158,21 @@ export function useTemplateFiltering(
           return dateB.getTime() - dateA.getTime()
         })
       case 'vram-low-to-high':
-        // TODO: Implement VRAM sorting when VRAM data is available
-        // For now, keep original order
-        return templates
+        return templates.sort((a, b) => {
+          const vramA = getVramMetric(a)
+          const vramB = getVramMetric(b)
+
+          if (vramA === vramB) {
+            const nameA = a.title || a.name || ''
+            const nameB = b.title || b.name || ''
+            return nameA.localeCompare(nameB)
+          }
+
+          if (vramA === Number.POSITIVE_INFINITY) return 1
+          if (vramB === Number.POSITIVE_INFINITY) return -1
+
+          return vramA - vramB
+        })
       case 'model-size-low-to-high':
         return templates.sort((a: any, b: any) => {
           const sizeA =
@@ -188,6 +213,38 @@ export function useTemplateFiltering(
 
   const filteredCount = computed(() => filteredTemplates.value.length)
   const totalCount = computed(() => templatesArray.value.length)
+
+  // Template filter tracking (debounced to avoid excessive events)
+  const debouncedTrackFilterChange = debounce(() => {
+    useTelemetry()?.trackTemplateFilterChanged({
+      search_query: searchQuery.value || undefined,
+      selected_models: selectedModels.value,
+      selected_use_cases: selectedUseCases.value,
+      selected_licenses: selectedLicenses.value,
+      sort_by: sortBy.value,
+      filtered_count: filteredCount.value,
+      total_count: totalCount.value
+    })
+  }, 500)
+
+  // Watch for filter changes and track them
+  watch(
+    [searchQuery, selectedModels, selectedUseCases, selectedLicenses, sortBy],
+    () => {
+      // Only track if at least one filter is active (to avoid tracking initial state)
+      const hasActiveFilters =
+        searchQuery.value.trim() !== '' ||
+        selectedModels.value.length > 0 ||
+        selectedUseCases.value.length > 0 ||
+        selectedLicenses.value.length > 0 ||
+        sortBy.value !== 'default'
+
+      if (hasActiveFilters) {
+        debouncedTrackFilterChange()
+      }
+    },
+    { deep: true }
+  )
 
   return {
     // State
