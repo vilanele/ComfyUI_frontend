@@ -1,3 +1,5 @@
+import { extension_base_path } from './path'
+
 const sounds: Record<string, string> = {
   bonus: 'bonus.mp3',
   bottle: 'bottle.mp3',
@@ -16,7 +18,7 @@ const sounds: Record<string, string> = {
 const default_sound: string = 'echo'
 
 function soundPath(sound: string): string {
-  return '/extensions/ComfyUI-Notify/audio/'.concat(sounds[sound])
+  return `/extensions/${extension_base_path}/audio/${sounds[sound]}`
 }
 
 export { sounds, default_sound, soundPath }

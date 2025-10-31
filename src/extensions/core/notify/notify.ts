@@ -25,9 +25,11 @@ app.registerExtension({
     {
       // @ts-ignore
       id: 'Pause.CancelButton',
-      name: 'Add a cancel button to the node',
+      name: 'Add a cancel button to interrupt the current run',
       type: 'boolean',
-      defaultValue: false
+      defaultValue: true,
+      tooltip: 'Requires a browser refresh to take effect',
+      category: ['Async Pause', 'Cancel button', 'pause.cancel.button']
     }
   ],
   async nodeCreated(node, app) {
@@ -38,12 +40,15 @@ app.registerExtension({
         '',
         async () => {
           const extendedNode = node as extendedNode
-          const response: Response = await api.fetchApi('/continue', {
-            method: 'POST',
-            body: JSON.stringify({
-              executionId: extendedNode.executionId
-            })
-          })
+          const response: Response = await api.fetchApi(
+            '/async_pause/continue',
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                executionId: extendedNode.executionId
+              })
+            }
+          )
           if (response.status != 200) {
             app.extensionManager.toast.add({
               severity: 'error',
@@ -76,12 +81,17 @@ app.registerExtension({
   settings: [
     {
       // @ts-ignore
-      id: 'NotifyAudio.PlayWhenChanged',
-      name: 'Play the sound when choosed',
-      category: ['Notify Audio', 'Notification sound', 'aa'],
+      id: 'NotifyAudio.PlayWhenSelected',
+      name: 'Play when selected',
+      category: [
+        'Notify Audio',
+        'Notification sound',
+        'notify.audio.play.when.changed'
+      ],
       type: 'boolean',
       defaultValue: true,
-      tooltip: 'Wether to play the notifiation wound when changing'
+      tooltip:
+        'Wether to play the notifiation sound when selected in the dropdown list'
     }
   ],
   async nodeCreated(node) {
@@ -102,10 +112,14 @@ app.registerExtension({
         (value) => {
           el.pause()
           el.src = api.fileURL(soundPath(value))
-          el.play()
+          if (
+            app.extensionManager.setting.get('NotifyAudio.PlayWhenSelected')
+          ) {
+            el.play()
+          }
         },
         {
-          values: Object.keys(sounds),
+          values: Object.keys(sounds).sort((a, b) => a.localeCompare(b)),
           serialize: false,
           canvasOnly: true
         }
