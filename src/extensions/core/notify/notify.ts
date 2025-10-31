@@ -20,14 +20,14 @@ app.api.addEventListener('entering_pause_loop', (event) => {
 })
 
 app.registerExtension({
-  name: 'Custom.Pause',
+  name: 'AsyncPause.Pause',
   settings: [
     {
       // @ts-ignore
-      id: 'Pause.CancelButton',
-      name: 'Add a cancel button to interrupt the current run',
+      id: 'AsyncPause.CancelButton',
+      name: 'Add a cancel button to the Pause node to interrupt the current run',
       type: 'boolean',
-      defaultValue: true,
+      defaultValue: false,
       tooltip: 'Requires a browser refresh to take effect',
       category: ['Async Pause', 'Cancel button', 'pause.cancel.button']
     }
@@ -58,12 +58,12 @@ app.registerExtension({
             })
           }
         },
-        { canvasOnly: true, serialize: false }
+        { serialize: false }
       )
       continue_btn.label = 'continue'
       continue_btn.tooltip = 'Continue execution of following nodes'
 
-      if (app.extensionManager.setting.get('Pause.CancelButton')) {
+      if (app.extensionManager.setting.get('AsyncPause.CancelButton')) {
         const cancel_btn = node.addWidget('button', 'cancel', '', () => {
           api.fetchApi('/interrupt', {
             method: 'POST'
@@ -77,14 +77,14 @@ app.registerExtension({
 })
 
 app.registerExtension({
-  name: 'Custom.NotifyAudio',
+  name: 'AsyncPause.NotifyAudio',
   settings: [
     {
       // @ts-ignore
-      id: 'NotifyAudio.PlayWhenSelected',
+      id: 'AsyncPause.PlayWhenSelected',
       name: 'Play when selected',
       category: [
-        'Notify Audio',
+        'Async Pause',
         'Notification sound',
         'notify.audio.play.when.changed'
       ],
@@ -112,37 +112,46 @@ app.registerExtension({
         (value) => {
           el.pause()
           el.src = api.fileURL(soundPath(value))
-          if (
-            app.extensionManager.setting.get('NotifyAudio.PlayWhenSelected')
-          ) {
+          if (app.extensionManager.setting.get('AsyncPause.PlayWhenSelected')) {
             el.play()
           }
         },
         {
-          values: Object.keys(sounds).sort((a, b) => a.localeCompare(b)),
-          serialize: false,
-          canvasOnly: true
+          values: Object.keys(sounds).sort((a, b) => a.localeCompare(b))
         }
       )
       sound.label = 'sound'
 
       const el: HTMLAudioElement = document.createElement('audio')
-      el.preload = 'auto'
       el.controls = true
+      el.style.display = 'hidden'
+      el.classList.add('comfy-audio')
+      el.setAttribute('name', 'media')
+      el.preload = 'auto'
       el.currentTime = 0
       el.volume = 0.5
       el.src = api.fileURL(soundPath(default_sound))
-      const player = node.addDOMWidget('player', 'player', el)
 
       node.onGraphConfigured = () => {
-        player.element.src = api.fileURL(soundPath(sound.value as string))
+        el.src = api.fileURL(soundPath(sound.value as string))
       }
+
+      const slider = node.addWidget(
+        'slider',
+        'volume',
+        50,
+        (value) => {
+          el.volume = value / 100
+        },
+        { min: 0, max: 100, step2: 1 }
+      )
+      slider.label = 'volume'
     }
   }
 })
 
 app.registerExtension({
-  name: 'Custom.Toast',
+  name: 'AsyncPause.Toast',
   async nodeCreated(node, app) {
     if (
       node.comfyClass === 'NotifyToastOutput' ||
