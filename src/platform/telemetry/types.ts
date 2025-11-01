@@ -42,6 +42,11 @@ export interface RunButtonProperties {
   subscribe_to_run: boolean
   workflow_type: 'template' | 'custom'
   workflow_name: string
+  custom_node_count: number
+  total_node_count: number
+  subgraph_count: number
+  has_api_nodes: boolean
+  api_node_names: string[]
 }
 
 /**
@@ -61,6 +66,9 @@ export interface ExecutionContext {
   custom_node_count: number
   api_node_count: number
   subgraph_count: number
+  total_node_count: number
+  has_api_nodes: boolean
+  api_node_names: string[]
 }
 
 /**
@@ -106,13 +114,35 @@ export interface CreditTopupMetadata {
 export interface WorkflowImportMetadata {
   missing_node_count: number
   missing_node_types: string[]
+  /**
+   * The source of the workflow open/import action
+   */
+  open_source?: 'file_button' | 'file_drop' | 'template' | 'unknown'
 }
+
+/**
+ * Workflow open metadata
+ */
+/**
+ * Enumerated sources for workflow open/import actions.
+ */
+export type WorkflowOpenSource = NonNullable<
+  WorkflowImportMetadata['open_source']
+>
 
 /**
  * Template library metadata
  */
 export interface TemplateLibraryMetadata {
   source: 'sidebar' | 'menu' | 'command'
+}
+
+/**
+ * Template library closed metadata
+ */
+export interface TemplateLibraryClosedMetadata {
+  template_selected: boolean
+  time_spent_seconds: number
 }
 
 /**
@@ -173,8 +203,11 @@ export interface TelemetryProvider {
   // Subscription flow events
   trackSubscription(event: 'modal_opened' | 'subscribe_clicked'): void
   trackMonthlySubscriptionSucceeded(): void
+  trackAddApiCreditButtonClicked(): void
   trackApiCreditTopupButtonPurchaseClicked(amount: number): void
   trackRunButton(options?: { subscribe_to_run?: boolean }): void
+  trackRunTriggeredViaKeybinding(): void
+  trackRunTriggeredViaMenu(): void
 
   // Survey flow events
   trackSurvey(stage: 'opened' | 'submitted', responses?: SurveyResponses): void
@@ -185,9 +218,11 @@ export interface TelemetryProvider {
   // Template workflow events
   trackTemplate(metadata: TemplateMetadata): void
   trackTemplateLibraryOpened(metadata: TemplateLibraryMetadata): void
+  trackTemplateLibraryClosed(metadata: TemplateLibraryClosedMetadata): void
 
   // Workflow management events
   trackWorkflowImported(metadata: WorkflowImportMetadata): void
+  trackWorkflowOpened(metadata: WorkflowImportMetadata): void
 
   // Page visibility events
   trackPageVisibilityChanged(metadata: PageVisibilityMetadata): void
@@ -222,9 +257,12 @@ export const TelemetryEvents = {
 
   // Subscription Flow
   RUN_BUTTON_CLICKED: 'app:run_button_click',
+  RUN_TRIGGERED_KEYBINDING: 'app:run_triggered_keybinding',
+  RUN_TRIGGERED_MENU: 'app:run_triggered_menu',
   SUBSCRIPTION_REQUIRED_MODAL_OPENED: 'app:subscription_required_modal_opened',
   SUBSCRIBE_NOW_BUTTON_CLICKED: 'app:subscribe_now_button_clicked',
   MONTHLY_SUBSCRIPTION_SUCCEEDED: 'app:monthly_subscription_succeeded',
+  ADD_API_CREDIT_BUTTON_CLICKED: 'app:add_api_credit_button_clicked',
   API_CREDIT_TOPUP_BUTTON_PURCHASE_CLICKED:
     'app:api_credit_topup_button_purchase_clicked',
 
@@ -240,9 +278,11 @@ export const TelemetryEvents = {
   // Template Tracking
   TEMPLATE_WORKFLOW_OPENED: 'app:template_workflow_opened',
   TEMPLATE_LIBRARY_OPENED: 'app:template_library_opened',
+  TEMPLATE_LIBRARY_CLOSED: 'app:template_library_closed',
 
   // Workflow Management
   WORKFLOW_IMPORTED: 'app:workflow_imported',
+  WORKFLOW_OPENED: 'app:workflow_opened',
 
   // Page Visibility
   PAGE_VISIBILITY_CHANGED: 'app:page_visibility_changed',
@@ -280,6 +320,7 @@ export type TelemetryEventProperties =
   | CreditTopupMetadata
   | WorkflowImportMetadata
   | TemplateLibraryMetadata
+  | TemplateLibraryClosedMetadata
   | PageVisibilityMetadata
   | TabCountMetadata
   | NodeSearchMetadata
