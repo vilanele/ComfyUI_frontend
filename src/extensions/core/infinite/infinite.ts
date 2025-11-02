@@ -124,7 +124,9 @@ app.registerExtension({
               'http://localhost:3000',
               'http://monster:7888',
               'http://infinite:7888',
-              'http://localhost:7888'
+              'http://localhost:7888',
+              'http://localhost:8000',
+              'http://localhost:7866'
             ]
           }
         )
