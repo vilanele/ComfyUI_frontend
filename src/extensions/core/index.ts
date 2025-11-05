@@ -23,7 +23,7 @@ import './uploadAudio'
 import './uploadImage'
 import './webcamCapture'
 import './widgetInputs'
-import './notify/notify'
+import './async-pause/async-pause'
 
 // Cloud-only extensions - tree-shaken in OSS builds
 if (isCloud) {
