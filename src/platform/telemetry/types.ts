@@ -47,6 +47,7 @@ export interface RunButtonProperties {
   subgraph_count: number
   has_api_nodes: boolean
   api_node_names: string[]
+  trigger_source?: ExecutionTriggerSource
 }
 
 /**
@@ -69,6 +70,7 @@ export interface ExecutionContext {
   total_node_count: number
   has_api_nodes: boolean
   api_node_names: string[]
+  trigger_source?: ExecutionTriggerSource
 }
 
 /**
@@ -190,7 +192,7 @@ export interface TemplateFilterMetadata {
   search_query?: string
   selected_models: string[]
   selected_use_cases: string[]
-  selected_licenses: string[]
+  selected_runs_on: string[]
   sort_by:
     | 'default'
     | 'alphabetical'
@@ -256,6 +258,7 @@ export interface WorkflowCreatedMetadata {
  */
 export interface TelemetryProvider {
   // Authentication flow events
+  trackSignupOpened(): void
   trackAuth(metadata: AuthMetadata): void
   trackUserLoggedIn(): void
 
@@ -265,9 +268,10 @@ export interface TelemetryProvider {
   trackAddApiCreditButtonClicked(): void
   trackApiCreditTopupButtonPurchaseClicked(amount: number): void
   trackApiCreditTopupSucceeded(): void
-  trackRunButton(options?: { subscribe_to_run?: boolean }): void
-  trackRunTriggeredViaKeybinding(): void
-  trackRunTriggeredViaMenu(): void
+  trackRunButton(options?: {
+    subscribe_to_run?: boolean
+    trigger_source?: ExecutionTriggerSource
+  }): void
 
   // Credit top-up tracking (composition with internal utilities)
   startTopupTracking(): void
@@ -331,13 +335,12 @@ export interface TelemetryProvider {
  */
 export const TelemetryEvents = {
   // Authentication Flow
+  USER_SIGN_UP_OPENED: 'app:user_sign_up_opened',
   USER_AUTH_COMPLETED: 'app:user_auth_completed',
   USER_LOGGED_IN: 'app:user_logged_in',
 
   // Subscription Flow
   RUN_BUTTON_CLICKED: 'app:run_button_click',
-  RUN_TRIGGERED_KEYBINDING: 'app:run_triggered_keybinding',
-  RUN_TRIGGERED_MENU: 'app:run_triggered_menu',
   SUBSCRIPTION_REQUIRED_MODAL_OPENED: 'app:subscription_required_modal_opened',
   SUBSCRIBE_NOW_BUTTON_CLICKED: 'app:subscribe_now_button_clicked',
   MONTHLY_SUBSCRIPTION_SUCCEEDED: 'app:monthly_subscription_succeeded',
@@ -398,6 +401,12 @@ export const TelemetryEvents = {
 
 export type TelemetryEventName =
   (typeof TelemetryEvents)[keyof typeof TelemetryEvents]
+
+export type ExecutionTriggerSource =
+  | 'button'
+  | 'keybinding'
+  | 'legacy_ui'
+  | 'unknown'
 
 /**
  * Union type for all possible telemetry event properties
