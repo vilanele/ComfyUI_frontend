@@ -3,6 +3,7 @@ import type { Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { useCurrentUser } from '@/composables/auth/useCurrentUser'
+import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { isCloud } from '@/platform/distribution/types'
 import type { SettingTreeNode } from '@/platform/settings/settingStore'
 import { useSettingStore } from '@/platform/settings/settingStore'
@@ -10,6 +11,8 @@ import type { SettingParams } from '@/platform/settings/types'
 import { isElectron } from '@/utils/envUtil'
 import { normalizeI18nKey } from '@/utils/formatUtil'
 import { buildTree } from '@/utils/treeUtil'
+import { useVueFeatureFlags } from '@/composables/useVueFeatureFlags'
+import { useSubscription } from '@/platform/cloud/subscription/composables/useSubscription'
 
 interface SettingPanelItem {
   node: SettingTreeNode
@@ -31,10 +34,16 @@ export function useSettingUI(
   const settingStore = useSettingStore()
   const activeCategory = ref<SettingTreeNode | null>(null)
 
+  const { shouldRenderVueNodes } = useVueFeatureFlags()
+  const { isActiveSubscription } = useSubscription()
+  const { flags } = useFeatureFlags()
+
   const settingRoot = computed<SettingTreeNode>(() => {
     const root = buildTree(
       Object.values(settingStore.settingsById).filter(
-        (setting: SettingParams) => setting.type !== 'hidden'
+        (setting: SettingParams) =>
+          setting.type !== 'hidden' &&
+          !(shouldRenderVueNodes.value && setting.hideInVueNodes)
       ),
       (setting: SettingParams) => setting.category || setting.id.split('.')
     )
@@ -76,7 +85,7 @@ export function useSettingUI(
       children: []
     },
     component: defineAsyncComponent(
-      () => import('@/components/dialog/content/setting/CreditsPanel.vue')
+      () => import('@/components/dialog/content/setting/LegacyCreditsPanel.vue')
     )
   }
 
@@ -96,6 +105,12 @@ export function useSettingUI(
               )
           )
         }
+
+  const shouldShowPlanCreditsPanel = computed(() => {
+    if (!subscriptionPanel) return false
+    if (!flags.subscriptionTiersEnabled) return true
+    return isActiveSubscription.value
+  })
 
   const userPanel: SettingPanelItem = {
     node: {
@@ -149,9 +164,7 @@ export function useSettingUI(
       keybindingPanel,
       extensionPanel,
       ...(isElectron() ? [serverConfigPanel] : []),
-      ...(isCloud &&
-      window.__CONFIG__?.subscription_required &&
-      subscriptionPanel
+      ...(shouldShowPlanCreditsPanel.value && subscriptionPanel
         ? [subscriptionPanel]
         : [])
     ].filter((panel) => panel.component)
@@ -186,8 +199,7 @@ export function useSettingUI(
       children: [
         userPanel.node,
         ...(isLoggedIn.value &&
-        isCloud &&
-        window.__CONFIG__?.subscription_required &&
+        shouldShowPlanCreditsPanel.value &&
         subscriptionPanel
           ? [subscriptionPanel.node]
           : []),

@@ -10,9 +10,13 @@ import type {
   INodeInputSlot,
   INodeOutputSlot
 } from '@/lib/litegraph/src/interfaces'
-import type { IBaseWidget } from '@/lib/litegraph/src/types/widgets'
+import type {
+  IBaseWidget,
+  IWidgetOptions
+} from '@/lib/litegraph/src/types/widgets'
 import { useLayoutMutations } from '@/renderer/core/layout/operations/layoutMutations'
 import { LayoutSource } from '@/renderer/core/layout/types'
+import type { NodeId } from '@/renderer/core/layout/types'
 import type { InputSpec } from '@/schemas/nodeDef/nodeDefSchemaV2'
 import { isDOMWidget } from '@/scripts/domWidget'
 import { useNodeDefStore } from '@/stores/nodeDefStore'
@@ -38,7 +42,7 @@ export interface SafeWidgetData {
   type: string
   value: WidgetValue
   label?: string
-  options?: Record<string, unknown>
+  options?: IWidgetOptions<unknown>
   callback?: ((value: unknown) => void) | undefined
   spec?: InputSpec
   slotMetadata?: WidgetSlotMetadata
@@ -46,7 +50,7 @@ export interface SafeWidgetData {
 }
 
 export interface VueNodeData {
-  id: string
+  id: NodeId
   title: string
   type: string
   mode: number
@@ -65,6 +69,7 @@ export interface VueNodeData {
   }
   color?: string
   bgcolor?: string
+  shape?: number
 }
 
 export interface GraphNodeManager {
@@ -78,10 +83,64 @@ export interface GraphNodeManager {
   cleanup(): void
 }
 
+export function safeWidgetMapper(
+  node: LGraphNode,
+  slotMetadata: Map<string, WidgetSlotMetadata>
+): (widget: IBaseWidget) => SafeWidgetData {
+  const nodeDefStore = useNodeDefStore()
+  return function (widget) {
+    try {
+      // TODO: Use widget.getReactiveData() once TypeScript types are updated
+      let value = widget.value
+
+      // For combo widgets, if value is undefined, use the first option as default
+      if (
+        value === undefined &&
+        widget.type === 'combo' &&
+        widget.options?.values &&
+        Array.isArray(widget.options.values) &&
+        widget.options.values.length > 0
+      ) {
+        value = widget.options.values[0]
+      }
+      const spec = nodeDefStore.getInputSpecForWidget(node, widget.name)
+      const slotInfo = slotMetadata.get(widget.name)
+
+      return {
+        name: widget.name,
+        type: widget.type,
+        value: value,
+        label: widget.label,
+        options: widget.options,
+        callback: widget.callback,
+        spec,
+        slotMetadata: slotInfo,
+        isDOMWidget: isDOMWidget(widget)
+      }
+    } catch (error) {
+      return {
+        name: widget.name || 'unknown',
+        type: widget.type || 'text',
+        value: undefined
+      }
+    }
+  }
+}
+
+export function isValidWidgetValue(value: unknown): value is WidgetValue {
+  return (
+    value === null ||
+    value === undefined ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'object'
+  )
+}
+
 export function useGraphNodeManager(graph: LGraph): GraphNodeManager {
   // Get layout mutations composable
   const { createNode, deleteNode, setSource } = useLayoutMutations()
-  const nodeDefStore = useNodeDefStore()
   // Safe reactive data extracted from LiteGraph nodes
   const vueNodeData = reactive(new Map<string, VueNodeData>())
 
@@ -147,45 +206,7 @@ export function useGraphNodeManager(graph: LGraph): GraphNodeManager {
           linked: input.link != null
         })
       })
-      return (
-        node.widgets?.map((widget) => {
-          try {
-            // TODO: Use widget.getReactiveData() once TypeScript types are updated
-            let value = widget.value
-
-            // For combo widgets, if value is undefined, use the first option as default
-            if (
-              value === undefined &&
-              widget.type === 'combo' &&
-              widget.options?.values &&
-              Array.isArray(widget.options.values) &&
-              widget.options.values.length > 0
-            ) {
-              value = widget.options.values[0]
-            }
-            const spec = nodeDefStore.getInputSpecForWidget(node, widget.name)
-            const slotInfo = slotMetadata.get(widget.name)
-
-            return {
-              name: widget.name,
-              type: widget.type,
-              value: value,
-              label: widget.label,
-              options: widget.options ? { ...widget.options } : undefined,
-              callback: widget.callback,
-              spec,
-              slotMetadata: slotInfo,
-              isDOMWidget: isDOMWidget(widget)
-            }
-          } catch (error) {
-            return {
-              name: widget.name || 'unknown',
-              type: widget.type || 'text',
-              value: undefined
-            }
-          }
-        }) ?? []
-      )
+      return node.widgets?.map(safeWidgetMapper(node, slotMetadata)) ?? []
     })
 
     const nodeType =
@@ -214,7 +235,8 @@ export function useGraphNodeManager(graph: LGraph): GraphNodeManager {
       outputs: node.outputs ? [...node.outputs] : undefined,
       flags: node.flags ? { ...node.flags } : undefined,
       color: node.color || undefined,
-      bgcolor: node.bgcolor || undefined
+      bgcolor: node.bgcolor || undefined,
+      shape: node.shape
     }
   }
 
@@ -269,10 +291,13 @@ export function useGraphNodeManager(graph: LGraph): GraphNodeManager {
       const updatedWidgets = currentData.widgets.map((w) =>
         w.name === widgetName ? { ...w, value: validateWidgetValue(value) } : w
       )
-      vueNodeData.set(nodeId, {
+      // Create a completely new object to ensure Vue reactivity triggers
+      const updatedData = {
         ...currentData,
         widgets: updatedWidgets
-      })
+      }
+
+      vueNodeData.set(nodeId, updatedData)
     } catch (error) {
       // Ignore widget update errors to prevent cascade failures
     }
@@ -545,6 +570,15 @@ export function useGraphNodeManager(graph: LGraph): GraphNodeManager {
                 ...currentData,
                 bgcolor:
                   typeof propertyEvent.newValue === 'string'
+                    ? propertyEvent.newValue
+                    : undefined
+              })
+              break
+            case 'shape':
+              vueNodeData.set(nodeId, {
+                ...currentData,
+                shape:
+                  typeof propertyEvent.newValue === 'number'
                     ? propertyEvent.newValue
                     : undefined
               })

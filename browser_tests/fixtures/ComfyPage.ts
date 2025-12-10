@@ -16,7 +16,6 @@ import { ComfyNodeSearchBox } from './components/ComfyNodeSearchBox'
 import { SettingDialog } from './components/SettingDialog'
 import {
   NodeLibrarySidebarTab,
-  QueueSidebarTab,
   WorkflowsSidebarTab
 } from './components/SidebarTab'
 import { Topbar } from './components/Topbar'
@@ -28,19 +27,32 @@ dotenv.config()
 
 type WorkspaceStore = ReturnType<typeof useWorkspaceStore>
 
+class ComfyPropertiesPanel {
+  readonly root: Locator
+  readonly panelTitle: Locator
+  readonly searchBox: Locator
+
+  constructor(readonly page: Page) {
+    this.root = page.getByTestId('properties-panel')
+    this.panelTitle = this.root.locator('h3')
+    this.searchBox = this.root.getByPlaceholder('Search...')
+  }
+}
+
 class ComfyMenu {
   private _nodeLibraryTab: NodeLibrarySidebarTab | null = null
   private _workflowsTab: WorkflowsSidebarTab | null = null
-  private _queueTab: QueueSidebarTab | null = null
   private _topbar: Topbar | null = null
 
   public readonly sideToolbar: Locator
+  public readonly propertiesPanel: ComfyPropertiesPanel
   public readonly themeToggleButton: Locator
   public readonly saveButton: Locator
 
   constructor(public readonly page: Page) {
     this.sideToolbar = page.locator('.side-tool-bar-container')
     this.themeToggleButton = page.locator('.comfy-vue-theme-toggle')
+    this.propertiesPanel = new ComfyPropertiesPanel(page)
     this.saveButton = page
       .locator('button[title="Save the current workflow"]')
       .nth(0)
@@ -58,11 +70,6 @@ class ComfyMenu {
   get workflowsTab() {
     this._workflowsTab ??= new WorkflowsSidebarTab(this.page)
     return this._workflowsTab
-  }
-
-  get queueTab() {
-    this._queueTab ??= new QueueSidebarTab(this.page)
-    return this._queueTab
   }
 
   get topbar() {
@@ -119,6 +126,20 @@ class ConfirmDialog {
     const loc = this[locator]
     await expect(loc).toBeVisible()
     await loc.click()
+
+    // Wait for the dialog mask to disappear after confirming
+    const mask = this.page.locator('.p-dialog-mask')
+    const count = await mask.count()
+    if (count > 0) {
+      await mask.first().waitFor({ state: 'hidden', timeout: 3000 })
+    }
+
+    // Wait for workflow service to finish if it's busy
+    await this.page.waitForFunction(
+      () => window['app']?.extensionManager?.workflow?.isBusy === false,
+      undefined,
+      { timeout: 3000 }
+    )
   }
 }
 
@@ -235,6 +256,9 @@ export class ComfyPage {
     await this.page.evaluate(async () => {
       await window['app'].extensionManager.workflow.syncWorkflows()
     })
+
+    // Wait for Vue to re-render the workflow list
+    await this.nextFrame()
   }
 
   async setupUser(username: string) {
@@ -317,19 +341,6 @@ export class ComfyPage {
     }
     await this.goto()
 
-    // Unify font for consistent screenshots.
-    await this.page.addStyleTag({
-      url: 'https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap'
-    })
-    await this.page.addStyleTag({
-      url: 'https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Roboto+Mono:ital,wght@0,100..700;1,100..700&family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap'
-    })
-    await this.page.addStyleTag({
-      content: `
-      * {
-        font-family: 'Roboto Mono', 'Noto Color Emoji';
-      }`
-    })
     await this.page.waitForFunction(() => document.fonts.ready)
     await this.page.waitForFunction(
       () =>
@@ -564,7 +575,7 @@ export class ComfyPage {
   async dragAndDrop(source: Position, target: Position) {
     await this.page.mouse.move(source.x, source.y)
     await this.page.mouse.down()
-    await this.page.mouse.move(target.x, target.y)
+    await this.page.mouse.move(target.x, target.y, { steps: 100 })
     await this.page.mouse.up()
     await this.nextFrame()
   }
@@ -1265,9 +1276,6 @@ export class ComfyPage {
         }, 'image/png')
       })
     }, filename)
-
-    // Wait a bit for the download to process
-    await this.page.waitForTimeout(500)
   }
 
   /**
@@ -1658,7 +1666,10 @@ export const comfyPageFixture = base.extend<{
         // Set tutorial completed to true to avoid loading the tutorial workflow.
         'Comfy.TutorialCompleted': true,
         'Comfy.SnapToGrid.GridSize': testComfySnapToGridGridSize,
-        'Comfy.VueNodes.AutoScaleLayout': false
+        'Comfy.VueNodes.AutoScaleLayout': false,
+        // Disable toast warning about version compatibility, as they may or
+        // may not appear - depending on upstream ComfyUI dependencies
+        'Comfy.VersionCompatibility.DisableWarnings': true
       })
     } catch (e) {
       console.error(e)

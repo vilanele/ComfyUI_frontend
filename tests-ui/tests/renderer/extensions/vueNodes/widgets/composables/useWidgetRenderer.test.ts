@@ -1,20 +1,24 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import WidgetAudioUI from '@/renderer/extensions/vueNodes/widgets/components/WidgetAudioUI.vue'
-import WidgetButton from '@/renderer/extensions/vueNodes/widgets/components/WidgetButton.vue'
-import WidgetColorPicker from '@/renderer/extensions/vueNodes/widgets/components/WidgetColorPicker.vue'
-import WidgetFileUpload from '@/renderer/extensions/vueNodes/widgets/components/WidgetFileUpload.vue'
-import WidgetInputNumber from '@/renderer/extensions/vueNodes/widgets/components/WidgetInputNumber.vue'
-import WidgetInputText from '@/renderer/extensions/vueNodes/widgets/components/WidgetInputText.vue'
-import WidgetMarkdown from '@/renderer/extensions/vueNodes/widgets/components/WidgetMarkdown.vue'
-import WidgetSelect from '@/renderer/extensions/vueNodes/widgets/components/WidgetSelect.vue'
-import WidgetTextarea from '@/renderer/extensions/vueNodes/widgets/components/WidgetTextarea.vue'
-import WidgetToggleSwitch from '@/renderer/extensions/vueNodes/widgets/components/WidgetToggleSwitch.vue'
 import {
   getComponent,
   isEssential,
-  shouldRenderAsVue
+  shouldRenderAsVue,
+  FOR_TESTING
 } from '@/renderer/extensions/vueNodes/widgets/registry/widgetRegistry'
+import type { SafeWidgetData } from '@/composables/graph/useGraphNodeManager'
+
+const {
+  WidgetAudioUI,
+  WidgetButton,
+  WidgetColorPicker,
+  WidgetInputNumber,
+  WidgetInputText,
+  WidgetMarkdown,
+  WidgetSelect,
+  WidgetTextarea,
+  WidgetToggleSwitch
+} = FOR_TESTING
 
 vi.mock('@/stores/queueStore', () => ({
   useQueueStore: vi.fn(() => ({
@@ -84,12 +88,6 @@ describe('widgetRegistry', () => {
         expect(getComponent('COLOR', 'color')).toBe(WidgetColorPicker)
       })
 
-      it('should map file types to file upload widget', () => {
-        expect(getComponent('file', 'file')).toBe(WidgetFileUpload)
-        expect(getComponent('fileupload', 'file')).toBe(WidgetFileUpload)
-        expect(getComponent('FILEUPLOAD', 'file')).toBe(WidgetFileUpload)
-      })
-
       it('should map button types to button widget', () => {
         expect(getComponent('button', '')).toBe(WidgetButton)
         expect(getComponent('BUTTON', '')).toBe(WidgetButton)
@@ -124,7 +122,10 @@ describe('widgetRegistry', () => {
     })
 
     it('should respect options while checking type', () => {
-      const widget = { type: 'text', options: { someOption: 'value' } }
+      const widget: Partial<SafeWidgetData> = {
+        type: 'text',
+        options: { precision: 5 }
+      }
       expect(shouldRenderAsVue(widget)).toBe(true)
     })
   })

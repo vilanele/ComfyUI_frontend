@@ -1,6 +1,6 @@
 <template>
   <div v-if="renderError" class="node-error p-2 text-sm text-red-500">
-    {{ $t('Node Render Error') }}
+    {{ st('nodeErrors.render', 'Node Render Error') }}
   </div>
   <div
     v-else
@@ -8,22 +8,25 @@
     :data-node-id="nodeData.id"
     :class="
       cn(
-        'bg-node-component-surface lg-node absolute',
-        'h-min w-min contain-style contain-layout min-h-(--node-height) min-w-(--node-width)',
-        'rounded-2xl touch-none flex flex-col',
-        'border-1 border-solid border-node-component-border',
+        'bg-component-node-background lg-node absolute pb-1',
+
+        'contain-style contain-layout min-w-[225px] min-h-(--node-height) w-(--node-width)',
+        shapeClass,
+        'touch-none flex flex-col',
+        'border-1 border-solid border-component-node-border',
         // hover (only when node should handle events)
         shouldHandleNodePointerEvents &&
           'hover:ring-7 ring-node-component-ring',
         'outline-transparent outline-2',
         borderClass,
         outlineClass,
+        cursorClass,
         {
-          'before:rounded-2xl before:pointer-events-none before:absolute before:bg-bypass/60 before:inset-0':
+          [`${beforeShapeClass} before:pointer-events-none before:absolute before:bg-bypass/60 before:inset-0`]:
             bypassed,
-          'before:rounded-2xl before:pointer-events-none before:absolute before:inset-0':
+          [`${beforeShapeClass} before:pointer-events-none before:absolute before:inset-0`]:
             muted,
-          'will-change-transform': isDragging
+          'ring-4 ring-primary-500 bg-primary-500/10': isDraggingOver
         },
 
         shouldHandleNodePointerEvents
@@ -36,13 +39,16 @@
         transform: `translate(${position.x ?? 0}px, ${(position.y ?? 0) - LiteGraph.NODE_TITLE_HEIGHT}px)`,
         zIndex: zIndex,
         opacity: nodeOpacity,
-        '--node-component-surface': nodeBodyBackgroundColor
-      },
-      dragStyle
+        '--component-node-background': nodeBodyBackgroundColor
+      }
     ]"
-    v-bind="pointerHandlers"
+    v-bind="remainingPointerHandlers"
+    @pointerdown="nodeOnPointerdown"
     @wheel="handleWheel"
     @contextmenu="handleContextMenu"
+    @dragover.prevent="handleDragOver"
+    @dragleave="handleDragLeave"
+    @drop.stop.prevent="handleDrop"
   >
     <div class="flex flex-col justify-center items-center relative">
       <template v-if="isCollapsed">
@@ -79,8 +85,7 @@
     />
 
     <template v-if="!isCollapsed">
-      <div class="relative mb-4">
-        <div :class="separatorClasses" />
+      <div class="relative mb-1">
         <!-- Progress bar for executing state -->
         <div
           v-if="executing && progress !== undefined"
@@ -95,18 +100,14 @@
         />
       </div>
 
-      <!-- Node Body - rendered based on LOD level and collapsed state -->
       <div
-        class="flex min-h-min min-w-min flex-1 flex-col gap-4 pb-4"
+        class="flex flex-1 flex-col gap-1 pb-2"
         :data-testid="`node-body-${nodeData.id}`"
       >
-        <!-- Slots only rendered at full detail -->
         <NodeSlots :node-data="nodeData" />
 
-        <!-- Widgets rendered at reduced+ detail -->
         <NodeWidgets v-if="nodeData.widgets?.length" :node-data="nodeData" />
 
-        <!-- Custom content at reduced+ detail -->
         <div v-if="hasCustomContent" class="min-h-0 flex-1 flex">
           <NodeContent :node-data="nodeData" :media="nodeMedia" />
         </div>
@@ -117,40 +118,44 @@
       </div>
     </template>
 
-    <!-- Resize handles -->
-    <template v-if="!isCollapsed">
-      <div
-        v-for="handle in cornerResizeHandles"
-        :key="handle.id"
-        role="button"
-        :aria-label="handle.ariaLabel"
-        :class="cn(baseResizeHandleClasses, handle.classes)"
-        @pointerdown.stop="handleResizePointerDown(handle.direction)($event)"
-      />
-    </template>
+    <!-- Resize handle (bottom-right only) -->
+    <div
+      v-if="!isCollapsed"
+      role="button"
+      :aria-label="t('g.resizeFromBottomRight')"
+      :class="cn(baseResizeHandleClasses, 'right-0 bottom-0 cursor-se-resize')"
+      @pointerdown.stop="handleResizePointerDown"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { whenever } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, inject, onErrorCaptured, onMounted, ref } from 'vue'
+import { computed, nextTick, onErrorCaptured, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { VueNodeData } from '@/composables/graph/useGraphNodeManager'
 import { toggleNodeOptions } from '@/composables/graph/useMoreOptionsMenu'
 import { useErrorHandling } from '@/composables/useErrorHandling'
-import { LGraphEventMode, LiteGraph } from '@/lib/litegraph/src/litegraph'
+import { st } from '@/i18n'
+import {
+  LGraphCanvas,
+  LGraphEventMode,
+  LiteGraph,
+  RenderShape
+} from '@/lib/litegraph/src/litegraph'
 import { useSettingStore } from '@/platform/settings/settingStore'
 import { useTelemetry } from '@/platform/telemetry'
 import { useCanvasStore } from '@/renderer/core/canvas/canvasStore'
 import { useCanvasInteractions } from '@/renderer/core/canvas/useCanvasInteractions'
-import { TransformStateKey } from '@/renderer/core/layout/injectionKeys'
+import { layoutStore } from '@/renderer/core/layout/store/layoutStore'
 import SlotConnectionDot from '@/renderer/extensions/vueNodes/components/SlotConnectionDot.vue'
 import { useNodeEventHandlers } from '@/renderer/extensions/vueNodes/composables/useNodeEventHandlers'
 import { useNodePointerInteractions } from '@/renderer/extensions/vueNodes/composables/useNodePointerInteractions'
+import { useNodeZIndex } from '@/renderer/extensions/vueNodes/composables/useNodeZIndex'
 import { useVueElementTracking } from '@/renderer/extensions/vueNodes/composables/useVueNodeResizeTracking'
 import { useNodeExecutionState } from '@/renderer/extensions/vueNodes/execution/useNodeExecutionState'
+import { useNodeDrag } from '@/renderer/extensions/vueNodes/layout/useNodeDrag'
 import { useNodeLayout } from '@/renderer/extensions/vueNodes/layout/useNodeLayout'
 import { useNodePreviewState } from '@/renderer/extensions/vueNodes/preview/useNodePreviewState'
 import { nonWidgetedInputs } from '@/renderer/extensions/vueNodes/utils/nodeDataUtils'
@@ -165,7 +170,6 @@ import {
 } from '@/utils/graphTraversalUtil'
 import { cn } from '@/utils/tailwindUtil'
 
-import type { ResizeHandleDirection } from '../interactions/resize/resizeMath'
 import { useNodeResize } from '../interactions/resize/useNodeResize'
 import LivePreview from './LivePreview.vue'
 import NodeContent from './NodeContent.vue'
@@ -184,21 +188,11 @@ const { nodeData, error = null } = defineProps<LGraphNodeProps>()
 
 const { t } = useI18n()
 
-const {
-  handleNodeCollapse,
-  handleNodeTitleUpdate,
-  handleNodeSelect,
-  handleNodeRightClick
-} = useNodeEventHandlers()
+const { handleNodeCollapse, handleNodeTitleUpdate, handleNodeRightClick } =
+  useNodeEventHandlers()
+const { bringNodeToFront } = useNodeZIndex()
 
 useVueElementTracking(() => nodeData.id, 'node')
-
-const transformState = inject(TransformStateKey)
-if (!transformState) {
-  throw new Error(
-    'TransformState must be provided for node resize functionality'
-  )
-}
 
 const { selectedNodeIds } = storeToRefs(useCanvasStore())
 const isSelected = computed(() => {
@@ -267,11 +261,25 @@ onErrorCaptured((error) => {
   return false // Prevent error propagation
 })
 
-const { position, size, zIndex, moveNodeTo } = useNodeLayout(() => nodeData.id)
-const { pointerHandlers, isDragging, dragStyle } = useNodePointerInteractions(
-  () => nodeData,
-  handleNodeSelect
-)
+const { position, size, zIndex } = useNodeLayout(() => nodeData.id)
+const { pointerHandlers } = useNodePointerInteractions(() => nodeData.id)
+const { onPointerdown, ...remainingPointerHandlers } = pointerHandlers
+const { startDrag } = useNodeDrag()
+
+async function nodeOnPointerdown(event: PointerEvent) {
+  if (event.altKey && lgraphNode.value) {
+    const result = LGraphCanvas.cloneNodes([lgraphNode.value])
+    if (result?.created?.length) {
+      const [newNode] = result.created
+      startDrag(event, `${newNode.id}`)
+      layoutStore.isDraggingVueNodes.value = true
+      await nextTick()
+      bringNodeToFront(`${newNode.id}`)
+      return
+    }
+  }
+  onPointerdown(event)
+}
 
 // Handle right-click context menu
 const handleContextMenu = (event: MouseEvent) => {
@@ -279,7 +287,7 @@ const handleContextMenu = (event: MouseEvent) => {
   event.stopPropagation()
 
   // First handle the standard right-click behavior (selection)
-  handleNodeRightClick(event as PointerEvent, nodeData)
+  handleNodeRightClick(event as PointerEvent, nodeData.id)
 
   // Show the node options menu at the cursor position
   const targetElement = event.currentTarget as HTMLElement
@@ -304,76 +312,36 @@ onMounted(() => {
 
 const baseResizeHandleClasses =
   'absolute h-3 w-3 opacity-0 pointer-events-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40'
-const POSITION_EPSILON = 0.01
 
-type CornerResizeHandle = {
-  id: string
-  direction: ResizeHandleDirection
-  classes: string
-  ariaLabel: string
+const MIN_NODE_WIDTH = 225
+
+const { startResize } = useNodeResize((result, element) => {
+  if (isCollapsed.value) return
+
+  // Clamp width to minimum to avoid conflicts with CSS min-width
+  const clampedWidth = Math.max(result.size.width, MIN_NODE_WIDTH)
+
+  // Apply size directly to DOM element - ResizeObserver will pick this up
+  element.style.setProperty('--node-width', `${clampedWidth}px`)
+  element.style.setProperty('--node-height', `${result.size.height}px`)
+})
+
+const handleResizePointerDown = (event: PointerEvent) => {
+  if (nodeData.flags?.pinned) return
+  startResize(event)
 }
 
-const cornerResizeHandles: CornerResizeHandle[] = [
-  {
-    id: 'se',
-    direction: { horizontal: 'right', vertical: 'bottom' },
-    classes: 'right-0 bottom-0 cursor-se-resize',
-    ariaLabel: t('g.resizeFromBottomRight')
-  },
-  {
-    id: 'ne',
-    direction: { horizontal: 'right', vertical: 'top' },
-    classes: 'right-0 top-0 cursor-ne-resize',
-    ariaLabel: t('g.resizeFromTopRight')
-  },
-  {
-    id: 'sw',
-    direction: { horizontal: 'left', vertical: 'bottom' },
-    classes: 'left-0 bottom-0 cursor-sw-resize',
-    ariaLabel: t('g.resizeFromBottomLeft')
-  },
-  {
-    id: 'nw',
-    direction: { horizontal: 'left', vertical: 'top' },
-    classes: 'left-0 top-0 cursor-nw-resize',
-    ariaLabel: t('g.resizeFromTopLeft')
-  }
-]
-
-const { startResize } = useNodeResize(
-  (result, element) => {
-    if (isCollapsed.value) return
-
-    // Apply size directly to DOM element - ResizeObserver will pick this up
-    element.style.setProperty('--node-width', `${result.size.width}px`)
-    element.style.setProperty('--node-height', `${result.size.height}px`)
-
-    const currentPosition = position.value
-    const deltaX = Math.abs(result.position.x - currentPosition.x)
-    const deltaY = Math.abs(result.position.y - currentPosition.y)
-
-    if (deltaX > POSITION_EPSILON || deltaY > POSITION_EPSILON) {
-      moveNodeTo(result.position)
-    }
-  },
-  {
-    transformState
-  }
-)
-
-const handleResizePointerDown = (direction: ResizeHandleDirection) => {
-  return (event: PointerEvent) => {
-    if (nodeData.flags?.pinned) return
-
-    startResize(event, direction, { ...position.value })
-  }
-}
-
-whenever(isCollapsed, () => {
+watch(isCollapsed, (collapsed) => {
   const element = nodeContainerRef.value
   if (!element) return
-  element.style.setProperty('--node-width', '')
-  element.style.setProperty('--node-height', '')
+  const [from, to] = collapsed ? ['', '-x'] : ['-x', '']
+  const currentWidth = element.style.getPropertyValue(`--node-width${from}`)
+  element.style.setProperty(`--node-width${to}`, currentWidth)
+  element.style.setProperty(`--node-width${from}`, '')
+
+  const currentHeight = element.style.getPropertyValue(`--node-height${from}`)
+  element.style.setProperty(`--node-height${to}`, currentHeight)
+  element.style.setProperty(`--node-height${from}`, '')
 })
 
 // Check if node has custom content (like image/video outputs)
@@ -383,7 +351,6 @@ const hasCustomContent = computed(() => {
 })
 
 // Computed classes and conditions for better reusability
-const separatorClasses = 'bg-node-component-border h-px mx-0 w-full lod-toggle'
 const progressClasses = 'h-2 bg-primary-500 transition-all duration-300'
 
 const { latestPreviewUrl, shouldShowPreviewImg } = useNodePreviewState(
@@ -406,6 +373,38 @@ const outlineClass = computed(() => {
         (executing.value && 'outline-node-executing') ||
         'outline-node-component-outline')
   )
+})
+
+const cursorClass = computed(() => {
+  return cn(
+    nodeData.flags?.pinned
+      ? 'cursor-default'
+      : layoutStore.isDraggingVueNodes.value
+        ? 'cursor-grabbing'
+        : 'cursor-grab'
+  )
+})
+
+const shapeClass = computed(() => {
+  switch (nodeData.shape) {
+    case RenderShape.BOX:
+      return 'rounded-none'
+    case RenderShape.CARD:
+      return 'rounded-tl-2xl rounded-br-2xl rounded-tr-none rounded-bl-none'
+    default:
+      return 'rounded-2xl'
+  }
+})
+
+const beforeShapeClass = computed(() => {
+  switch (nodeData.shape) {
+    case RenderShape.BOX:
+      return 'before:rounded-none'
+    case RenderShape.CARD:
+      return 'before:rounded-tl-2xl before:rounded-br-2xl before:rounded-tr-none before:rounded-bl-none'
+    default:
+      return 'before:rounded-2xl'
+  }
 })
 
 // Event handlers
@@ -481,4 +480,35 @@ const nodeMedia = computed(() => {
 })
 
 const nodeContainerRef = ref<HTMLDivElement>()
+
+// Drag and drop support
+const isDraggingOver = ref(false)
+
+function handleDragOver(event: DragEvent) {
+  const node = lgraphNode.value
+  if (!node || !node.onDragOver) {
+    isDraggingOver.value = false
+    return
+  }
+
+  // Call the litegraph node's onDragOver callback to check if files are valid
+  const canDrop = node.onDragOver(event)
+  isDraggingOver.value = canDrop
+}
+
+function handleDragLeave() {
+  isDraggingOver.value = false
+}
+
+async function handleDrop(event: DragEvent) {
+  isDraggingOver.value = false
+
+  const node = lgraphNode.value
+  if (!node || !node.onDragDrop) {
+    return
+  }
+
+  // Forward the drop event to the litegraph node's onDragDrop callback
+  await node.onDragDrop(event)
+}
 </script>

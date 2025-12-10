@@ -21,18 +21,34 @@
     </template>
 
     <template #header>
-      <SearchBox
-        v-model="searchQuery"
-        :autofocus="true"
-        size="lg"
-        :placeholder="$t('assetBrowser.searchAssetsPlaceholder')"
-        class="max-w-96"
-      />
+      <div class="flex w-full items-center justify-between gap-2">
+        <SearchBox
+          v-model="searchQuery"
+          :autofocus="true"
+          size="lg"
+          :placeholder="$t('g.searchPlaceholder')"
+          class="max-w-96"
+        />
+        <IconTextButton
+          v-if="isUploadButtonEnabled"
+          type="accent"
+          size="md"
+          class="!h-10 [&>span]:hidden md:[&>span]:inline"
+          data-attr="upload-model-button"
+          :label="$t('assetBrowser.uploadModel')"
+          :on-click="showUploadDialog"
+        >
+          <template #icon>
+            <i class="icon-[lucide--folder-input]" />
+          </template>
+        </IconTextButton>
+      </div>
     </template>
 
     <template #contentFilter>
       <AssetFilterBar
         :assets="categoryFilteredAssets"
+        :all-assets="fetchedAssets"
         @filter-change="updateFilters"
       />
     </template>
@@ -52,6 +68,7 @@ import { useAsyncState } from '@vueuse/core'
 import { computed, provide, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import IconTextButton from '@/components/button/IconTextButton.vue'
 import SearchBox from '@/components/input/SearchBox.vue'
 import BaseModalLayout from '@/components/widget/layout/BaseModalLayout.vue'
 import LeftSidePanel from '@/components/widget/panel/LeftSidePanel.vue'
@@ -59,6 +76,7 @@ import AssetFilterBar from '@/platform/assets/components/AssetFilterBar.vue'
 import AssetGrid from '@/platform/assets/components/AssetGrid.vue'
 import type { AssetDisplayItem } from '@/platform/assets/composables/useAssetBrowser'
 import { useAssetBrowser } from '@/platform/assets/composables/useAssetBrowser'
+import { useModelUpload } from '@/platform/assets/composables/useModelUpload'
 import type { AssetItem } from '@/platform/assets/schemas/assetSchema'
 import { assetService } from '@/platform/assets/services/assetService'
 import { formatCategoryLabel } from '@/platform/assets/utils/categoryLabel'
@@ -168,4 +186,6 @@ function handleAssetSelectAndEmit(asset: AssetDisplayItem) {
   // It handles the appropriate transformation (filename extraction or full asset)
   props.onSelect?.(asset)
 }
+
+const { isUploadButtonEnabled, showUploadDialog } = useModelUpload(execute)
 </script>

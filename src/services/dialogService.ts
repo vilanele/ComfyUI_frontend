@@ -2,9 +2,11 @@ import { merge } from 'es-toolkit/compat'
 import type { Component } from 'vue'
 
 import ApiNodesSignInContent from '@/components/dialog/content/ApiNodesSignInContent.vue'
+import MissingNodesContent from '@/components/dialog/content/MissingNodesContent.vue'
+import MissingNodesFooter from '@/components/dialog/content/MissingNodesFooter.vue'
+import MissingNodesHeader from '@/components/dialog/content/MissingNodesHeader.vue'
 import ConfirmationDialogContent from '@/components/dialog/content/ConfirmationDialogContent.vue'
 import ErrorDialogContent from '@/components/dialog/content/ErrorDialogContent.vue'
-import LoadWorkflowWarning from '@/components/dialog/content/LoadWorkflowWarning.vue'
 import MissingModelsWarning from '@/components/dialog/content/MissingModelsWarning.vue'
 import PromptDialogContent from '@/components/dialog/content/PromptDialogContent.vue'
 import SignInContent from '@/components/dialog/content/SignInContent.vue'
@@ -32,6 +34,7 @@ import NodeConflictDialogContent from '@/workbench/extensions/manager/components
 import NodeConflictFooter from '@/workbench/extensions/manager/components/manager/NodeConflictFooter.vue'
 import NodeConflictHeader from '@/workbench/extensions/manager/components/manager/NodeConflictHeader.vue'
 import type { ConflictDetectionResult } from '@/workbench/extensions/manager/types/conflictDetectionTypes'
+import type { ComponentAttrs } from 'vue-component-type-helpers'
 
 export type ConfirmationDialogType =
   | 'default'
@@ -43,18 +46,35 @@ export type ConfirmationDialogType =
 
 export const useDialogService = () => {
   const dialogStore = useDialogStore()
+
   function showLoadWorkflowWarning(
-    props: InstanceType<typeof LoadWorkflowWarning>['$props']
+    props: ComponentAttrs<typeof MissingNodesContent>
   ) {
     dialogStore.showDialog({
-      key: 'global-load-workflow-warning',
-      component: LoadWorkflowWarning,
+      key: 'global-missing-nodes',
+      headerComponent: MissingNodesHeader,
+      footerComponent: MissingNodesFooter,
+      component: MissingNodesContent,
+      dialogComponentProps: {
+        closable: true,
+        pt: {
+          root: { class: 'bg-base-background border-border-default' },
+          header: { class: '!p-0 !m-0' },
+          content: { class: '!p-0 overflow-y-hidden' },
+          footer: { class: '!p-0' },
+          pcCloseButton: {
+            root: {
+              class: '!w-7 !h-7 !border-none !outline-none !p-2 !m-1.5'
+            }
+          }
+        }
+      },
       props
     })
   }
 
   function showMissingModelsWarning(
-    props: InstanceType<typeof MissingModelsWarning>['$props']
+    props: ComponentAttrs<typeof MissingModelsWarning>
   ) {
     dialogStore.showDialog({
       key: 'global-missing-models-warning',
@@ -95,7 +115,7 @@ export const useDialogService = () => {
   }
 
   function showExecutionErrorDialog(executionError: ExecutionErrorWsMessage) {
-    const props: InstanceType<typeof ErrorDialogContent>['$props'] = {
+    const props: ComponentAttrs<typeof ErrorDialogContent> = {
       error: {
         exceptionType: executionError.exception_type,
         exceptionMessage: executionError.exception_message,
@@ -121,7 +141,7 @@ export const useDialogService = () => {
   }
 
   function showManagerDialog(
-    props: InstanceType<typeof ManagerDialogContent>['$props'] = {}
+    props: ComponentAttrs<typeof ManagerDialogContent> = {}
   ) {
     dialogStore.showDialog({
       key: 'global-manager',
@@ -186,7 +206,7 @@ export const useDialogService = () => {
             errorMessage: String(error)
           }
 
-    const props: InstanceType<typeof ErrorDialogContent>['$props'] = {
+    const props: ComponentAttrs<typeof ErrorDialogContent> = {
       error: {
         exceptionType: options.title ?? 'Unknown Error',
         exceptionMessage: errorProps.errorMessage,
@@ -284,11 +304,13 @@ export const useDialogService = () => {
   async function prompt({
     title,
     message,
-    defaultValue = ''
+    defaultValue = '',
+    placeholder
   }: {
     title: string
     message: string
     defaultValue?: string
+    placeholder?: string
   }): Promise<string | null> {
     return new Promise((resolve) => {
       dialogStore.showDialog({
@@ -300,7 +322,8 @@ export const useDialogService = () => {
           defaultValue,
           onConfirm: (value: string) => {
             resolve(value)
-          }
+          },
+          placeholder
         },
         dialogComponentProps: {
           onClose: () => {
@@ -363,11 +386,12 @@ export const useDialogService = () => {
     return dialogStore.showDialog({
       key: 'top-up-credits',
       component: TopUpCreditsDialogContent,
-      headerComponent: ComfyOrgHeader,
       props: options,
       dialogComponentProps: {
+        headless: true,
         pt: {
-          header: { class: 'p-3!' }
+          header: { class: 'p-0! hidden' },
+          content: { class: 'p-0! m-0!' }
         }
       }
     })
@@ -407,7 +431,7 @@ export const useDialogService = () => {
   }
 
   function toggleManagerDialog(
-    props?: InstanceType<typeof ManagerDialogContent>['$props']
+    props?: ComponentAttrs<typeof ManagerDialogContent>
   ) {
     if (dialogStore.isDialogOpen('global-manager')) {
       dialogStore.closeDialog({ key: 'global-manager' })
@@ -417,7 +441,7 @@ export const useDialogService = () => {
   }
 
   function toggleManagerProgressDialog(
-    props?: InstanceType<typeof ManagerProgressDialogContent>['$props']
+    props?: ComponentAttrs<typeof ManagerProgressDialogContent>
   ) {
     if (dialogStore.isDialogOpen('global-manager-progress-dialog')) {
       dialogStore.closeDialog({ key: 'global-manager-progress-dialog' })

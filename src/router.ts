@@ -14,17 +14,23 @@ import { useUserStore } from '@/stores/userStore'
 import { isElectron } from '@/utils/envUtil'
 import LayoutDefault from '@/views/layouts/LayoutDefault.vue'
 
+import { installPreservedQueryTracker } from '@/platform/navigation/preservedQueryTracker'
+import { PRESERVED_QUERY_NAMESPACES } from '@/platform/navigation/preservedQueryNamespaces'
 import { cloudOnboardingRoutes } from './platform/cloud/onboarding/onboardingCloudRoutes'
 
 const isFileProtocol = window.location.protocol === 'file:'
 
-// Determine base path for the router
-// - Electron: always root
-// - Web: rely on Vite's BASE_URL (configured via vite.config `base`)
+/**
+ * Determine base path for the router.
+ * - Electron: always root
+ * - Cloud: use Vite's BASE_URL (configured at build time)
+ * - Standard web (including reverse proxy subpaths): use window.location.pathname
+ *   to support deployments like http://mysite.com/ComfyUI/
+ */
 function getBasePath(): string {
   if (isElectron()) return '/'
-  // Vite injects BASE_URL at build/dev time; default to '/'
-  return import.meta.env?.BASE_URL || '/'
+  if (isCloud) return import.meta.env?.BASE_URL || '/'
+  return window.location.pathname
 }
 
 const basePath = getBasePath()
@@ -74,6 +80,13 @@ const router = createRouter({
     }
   }
 })
+
+installPreservedQueryTracker(router, [
+  {
+    namespace: PRESERVED_QUERY_NAMESPACES.TEMPLATE,
+    keys: ['template', 'source', 'mode']
+  }
+])
 
 if (isCloud) {
   const PUBLIC_ROUTE_NAMES = new Set([

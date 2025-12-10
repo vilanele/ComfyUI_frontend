@@ -1,5 +1,6 @@
 import { computed, reactive, readonly } from 'vue'
 
+import { remoteConfig } from '@/platform/remoteConfig/remoteConfig'
 import { api } from '@/scripts/api'
 
 /**
@@ -8,7 +9,11 @@ import { api } from '@/scripts/api'
 export enum ServerFeatureFlag {
   SUPPORTS_PREVIEW_METADATA = 'supports_preview_metadata',
   MAX_UPLOAD_SIZE = 'max_upload_size',
-  MANAGER_SUPPORTS_V4 = 'extension.manager.supports_v4'
+  MANAGER_SUPPORTS_V4 = 'extension.manager.supports_v4',
+  MODEL_UPLOAD_BUTTON_ENABLED = 'model_upload_button_enabled',
+  ASSET_UPDATE_OPTIONS_ENABLED = 'asset_update_options_enabled',
+  PRIVATE_MODELS_ENABLED = 'private_models_enabled',
+  SUBSCRIPTION_TIERS_ENABLED = 'subscription_tiers_enabled'
 }
 
 /**
@@ -24,6 +29,43 @@ export function useFeatureFlags() {
     },
     get supportsManagerV4() {
       return api.getServerFeature(ServerFeatureFlag.MANAGER_SUPPORTS_V4)
+    },
+    get modelUploadButtonEnabled() {
+      // Check remote config first (from /api/features), fall back to websocket feature flags
+      return (
+        remoteConfig.value.model_upload_button_enabled ??
+        api.getServerFeature(
+          ServerFeatureFlag.MODEL_UPLOAD_BUTTON_ENABLED,
+          false
+        )
+      )
+    },
+    get assetUpdateOptionsEnabled() {
+      // Check remote config first (from /api/features), fall back to websocket feature flags
+      return (
+        remoteConfig.value.asset_update_options_enabled ??
+        api.getServerFeature(
+          ServerFeatureFlag.ASSET_UPDATE_OPTIONS_ENABLED,
+          false
+        )
+      )
+    },
+    get privateModelsEnabled() {
+      // Check remote config first (from /api/features), fall back to websocket feature flags
+      return (
+        remoteConfig.value.private_models_enabled ??
+        api.getServerFeature(ServerFeatureFlag.PRIVATE_MODELS_ENABLED, false)
+      )
+    },
+    get subscriptionTiersEnabled() {
+      // Check remote config first (from /api/features), fall back to websocket feature flags
+      return (
+        remoteConfig.value.subscription_tiers_enabled ??
+        api.getServerFeature(
+          ServerFeatureFlag.SUBSCRIPTION_TIERS_ENABLED,
+          true // Default to true (new design)
+        )
+      )
     }
   })
 

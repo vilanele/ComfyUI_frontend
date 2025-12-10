@@ -2,14 +2,17 @@ import { LGraphNodeProperties } from '@/lib/litegraph/src/LGraphNodeProperties'
 import {
   calculateInputSlotPos,
   calculateInputSlotPosFromSlot,
-  calculateOutputSlotPos
+  calculateOutputSlotPos,
+  getSlotPosition
 } from '@/renderer/core/canvas/litegraph/slotCalculations'
 import type { SlotPositionContext } from '@/renderer/core/canvas/litegraph/slotCalculations'
 import { useLayoutMutations } from '@/renderer/core/layout/operations/layoutMutations'
 import { LayoutSource } from '@/renderer/core/layout/types'
 import { adjustColor } from '@/utils/colorUtil'
 import type { ColorAdjustOptions } from '@/utils/colorUtil'
+import { commonType, toClass } from '@/lib/litegraph/src/utils/type'
 
+import { SUBGRAPH_OUTPUT_ID } from '@/lib/litegraph/src/constants'
 import type { DragAndScale } from './DragAndScale'
 import type { LGraph } from './LGraph'
 import { BadgePosition, LGraphBadge } from './LGraphBadge'
@@ -44,8 +47,8 @@ import type {
   Rect,
   Size
 } from './interfaces'
-import { LiteGraph } from './litegraph'
-import type { LGraphNodeConstructor, Subgraph, SubgraphNode } from './litegraph'
+import { LiteGraph, Subgraph } from './litegraph'
+import type { LGraphNodeConstructor, SubgraphNode } from './litegraph'
 import {
   createBounds,
   isInRect,
@@ -82,7 +85,6 @@ import { findFreeSlotOfType } from './utils/collections'
 import { warnDeprecated } from './utils/feedback'
 import { distributeSpace } from './utils/spaceDistribution'
 import { truncateText } from './utils/textUtils'
-import { toClass } from './utils/type'
 import { BaseWidget } from './widgets/BaseWidget'
 import { toConcreteWidget } from './widgets/widgetMap'
 import type { WidgetTypeMap } from './widgets/widgetMap'
@@ -206,7 +208,6 @@ supported callbacks:
     + getExtraMenuOptions: to add option to context menu
 */
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface LGraphNode {
   constructor: LGraphNodeConstructor
 }
@@ -218,7 +219,7 @@ export interface LGraphNode {
  * @param title a name for the node
  * @param type a type for the node
  */
-// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
+
 export class LGraphNode
   implements NodeLike, Positionable, IPinnable, IColorable
 {
@@ -415,6 +416,7 @@ export class LGraphNode
   selected?: boolean
   showAdvanced?: boolean
 
+  declare comfyMatchType?: Record<string, Record<string, string>>
   declare comfyClass?: string
   declare isVirtualNode?: boolean
   applyToGraph?(extraLinks?: LLink[]): void
@@ -493,6 +495,7 @@ export class LGraphNode
   }
 
   set shape(v: RenderShape | 'default' | 'box' | 'round' | 'circle' | 'card') {
+    const oldValue = this._shape
     switch (v) {
       case 'default':
         this._shape = undefined
@@ -511,6 +514,14 @@ export class LGraphNode
         break
       default:
         this._shape = v
+    }
+    if (oldValue !== this._shape) {
+      this.graph?.trigger('node:property:changed', {
+        nodeId: this.id,
+        property: 'shape',
+        oldValue,
+        newValue: this._shape
+      })
     }
   }
 
@@ -836,6 +847,9 @@ export class LGraphNode
       for (const w of this.widgets) {
         if (!w) continue
 
+        const input = this.inputs.find((i) => i.widget?.name === w.name)
+        if (input?.label) w.label = input.label
+
         if (
           w.options?.property &&
           this.properties[w.options.property] != undefined
@@ -846,14 +860,11 @@ export class LGraphNode
       }
 
       if (info.widgets_values) {
-        const widgetsWithValue = this.widgets.filter(
-          (w) => w.serialize !== false
-        )
-        for (let i = 0; i < info.widgets_values.length; ++i) {
-          const widget = widgetsWithValue[i]
-          if (widget) {
-            widget.value = info.widgets_values[i]
-          }
+        let i = 0
+        for (const widget of this.widgets ?? []) {
+          if (widget.serialize === false) continue
+          if (i >= info.widgets_values.length) break
+          widget.value = info.widgets_values[i++]
         }
       }
     }
@@ -882,7 +893,7 @@ export class LGraphNode
 
     // special case for when there were errors
     if (this.constructor === LGraphNode && this.last_serialization)
-      return this.last_serialization
+      return { ...this.last_serialization, mode: o.mode, pos: o.pos }
 
     if (this.inputs)
       o.inputs = this.inputs.map((input) => inputAsSerialisable(input))
@@ -2829,9 +2840,12 @@ export class LGraphNode
       inputNode.disconnectInput(inputIndex, true)
     }
 
+    const maybeCommonType =
+      input.type && output.type && commonType(input.type, output.type)
+
     const link = new LLink(
       ++graph.state.lastLinkId,
-      input.type || output.type,
+      maybeCommonType || input.type || output.type,
       this.id,
       outputIndex,
       inputNode.id,
@@ -3060,6 +3074,17 @@ export class LGraphNode
       for (const link_id of links) {
         const link_info = graph._links.get(link_id)
         if (!link_info) continue
+        if (
+          link_info.target_id === SUBGRAPH_OUTPUT_ID &&
+          graph instanceof Subgraph
+        ) {
+          const targetSlot = graph.outputNode.slots[link_info.target_slot]
+          if (targetSlot) {
+            targetSlot.linkIds.length = 0
+          } else {
+            console.error('Missing subgraphOutput slot when disconnecting link')
+          }
+        }
 
         const target = graph.getNodeById(link_info.target_id)
         graph._version++
@@ -3339,6 +3364,16 @@ export class LGraphNode
       this.#getSlotPositionContext(),
       outputSlotIndex
     )
+  }
+
+  /**
+   * Get slot position using layout tree if available, fallback to node's position * Unified implementation used by both LitegraphLinkAdapter and useLinkLayoutSync
+   * @param slotIndex The slot index
+   * @param isInput Whether this is an input slot
+   * @returns Position of the slot center in graph coordinates
+   */
+  getSlotPosition(slotIndex: number, isInput: boolean): Point {
+    return getSlotPosition(this, slotIndex, isInput)
   }
 
   /** @inheritdoc */
@@ -3978,7 +4013,8 @@ export class LGraphNode
         isValidTarget ||
         !slot.isWidgetInputSlot ||
         this.#isMouseOverWidget(this.getWidgetFromSlot(slot)) ||
-        slot.isConnected
+        slot.isConnected ||
+        slot.alwaysVisible
       ) {
         ctx.globalAlpha = isValid ? editorAlpha : 0.4 * editorAlpha
         slot.draw(ctx, {
@@ -4014,7 +4050,9 @@ export class LGraphNode
       w: IBaseWidget
     }[] = []
 
-    for (const w of this.widgets) {
+    const visibleWidgets = this.widgets.filter((w) => !w.hidden)
+
+    for (const w of visibleWidgets) {
       if (w.computeSize) {
         const height = w.computeSize()[1] + 4
         w.computedHeight = height
@@ -4053,7 +4091,7 @@ export class LGraphNode
 
     // Position widgets
     let y = startY
-    for (const w of this.widgets) {
+    for (const w of visibleWidgets) {
       w.y = y
       y += w.computedHeight ?? 0
     }

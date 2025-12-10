@@ -1,7 +1,8 @@
+import { cn } from '@comfyorg/tailwind-utils'
 import type { HTMLAttributes } from 'vue'
 
-export type ButtonSize = 'fit-content' | 'sm' | 'md'
-type ButtonType = 'primary' | 'secondary' | 'transparent'
+export type ButtonSize = 'full-width' | 'fit-content' | 'sm' | 'md'
+type ButtonType = 'primary' | 'secondary' | 'transparent' | 'accent'
 type ButtonBorder = boolean
 
 export interface BaseButtonProps {
@@ -15,20 +16,24 @@ export interface BaseButtonProps {
 export const getButtonSizeClasses = (size: ButtonSize = 'md') => {
   const sizeClasses = {
     'fit-content': '',
+    'full-width': 'w-full',
     sm: 'px-2 py-1.5 text-xs',
-    md: 'px-2.5 py-2 text-sm'
+    md: 'px-4 py-2 text-sm'
   }
   return sizeClasses[size]
 }
 
 export const getButtonTypeClasses = (type: ButtonType = 'primary') => {
   const baseByType = {
-    primary:
-      'bg-neutral-900 border-none text-white dark-theme:bg-white dark-theme:text-neutral-900',
-    secondary:
-      'bg-white border-none text-neutral-950 dark-theme:bg-zinc-700 dark-theme:text-white',
-    transparent:
-      'bg-transparent border-none text-neutral-600 dark-theme:text-neutral-200'
+    primary: 'bg-base-foreground border-none text-base-background',
+    secondary: cn(
+      'bg-secondary-background border-none text-base-foreground hover:bg-secondary-background-hover'
+    ),
+    transparent: cn(
+      'bg-transparent border-none text-muted-foreground hover:bg-secondary-background-hover'
+    ),
+    accent:
+      'bg-primary-background hover:bg-primary-background-hover border-none text-white font-bold'
   } as const
 
   return baseByType[type]
@@ -36,18 +41,20 @@ export const getButtonTypeClasses = (type: ButtonType = 'primary') => {
 
 export const getBorderButtonTypeClasses = (type: ButtonType = 'primary') => {
   const baseByType = {
-    primary:
-      'bg-neutral-900 text-white dark-theme:bg-white dark-theme:text-neutral-900',
-    secondary:
-      'bg-white text-neutral-950 dark-theme:bg-zinc-700 dark-theme:text-white',
-    transparent: 'bg-transparent text-neutral-600 dark-theme:text-neutral-400'
+    primary: 'bg-base-background text-base-foreground',
+    secondary: 'bg-secondary-background text-base-foreground',
+    transparent: cn(
+      'bg-transparent text-base-foreground hover:bg-secondary-background-hover'
+    ),
+    accent:
+      'bg-primary-background hover:bg-primary-background-hover text-white font-bold'
   } as const
 
   const borderByType = {
-    primary: 'border border-solid border-white dark-theme:border-neutral-900',
-    secondary: 'border border-solid border-neutral-950 dark-theme:border-white',
-    transparent:
-      'border border-solid border-neutral-950 dark-theme:border-white'
+    primary: 'border border-solid border-base-background',
+    secondary: 'border border-solid border-base-foreground',
+    transparent: 'border border-solid border-base-foreground',
+    accent: 'border border-solid border-primary-background'
   } as const
 
   return `${baseByType[type]} ${borderByType[type]}`
@@ -56,6 +63,7 @@ export const getBorderButtonTypeClasses = (type: ButtonType = 'primary') => {
 export const getIconButtonSizeClasses = (size: ButtonSize = 'md') => {
   const sizeClasses = {
     'fit-content': 'w-auto h-auto',
+    'full-width': 'w-full h-auto',
     sm: 'size-8 text-xs !rounded-md',
     md: 'size-10 text-sm'
   }

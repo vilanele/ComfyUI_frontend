@@ -4,22 +4,23 @@ import { createSharedComposable } from '@vueuse/core'
 import { useCurrentUser } from '@/composables/auth/useCurrentUser'
 import { useFirebaseAuthActions } from '@/composables/auth/useFirebaseAuthActions'
 import { useErrorHandling } from '@/composables/useErrorHandling'
-import { COMFY_API_BASE_URL } from '@/config/comfyApi'
+import { getComfyApiBaseUrl, getComfyPlatformBaseUrl } from '@/config/comfyApi'
 import { MONTHLY_SUBSCRIPTION_PRICE } from '@/config/subscriptionPricesConfig'
 import { t } from '@/i18n'
 import { isCloud } from '@/platform/distribution/types'
 import { useTelemetry } from '@/platform/telemetry'
-import { useDialogService } from '@/services/dialogService'
 import {
   FirebaseAuthStoreError,
   useFirebaseAuthStore
 } from '@/stores/firebaseAuthStore'
+import { useDialogService } from '@/services/dialogService'
+import { useSubscriptionCancellationWatcher } from './useSubscriptionCancellationWatcher'
 
 type CloudSubscriptionCheckoutResponse = {
   checkout_url: string
 }
 
-type CloudSubscriptionStatusResponse = {
+export type CloudSubscriptionStatusResponse = {
   is_active: boolean
   subscription_id: string
   renewal_date: string | null
@@ -28,6 +29,7 @@ type CloudSubscriptionStatusResponse = {
 
 function useSubscriptionInternal() {
   const subscriptionStatus = ref<CloudSubscriptionStatusResponse | null>(null)
+  const telemetry = useTelemetry()
 
   const isSubscribedOrIsNotCloud = computed(() => {
     if (!isCloud || !window.__CONFIG__?.subscription_required) return true
@@ -35,7 +37,7 @@ function useSubscriptionInternal() {
     return subscriptionStatus.value?.is_active ?? false
   })
   const { reportError, accessBillingPortal } = useFirebaseAuthActions()
-  const dialogService = useDialogService()
+  const { showSubscriptionRequiredDialog } = useDialogService()
 
   const { getAuthHeader } = useFirebaseAuthStore()
   const { wrapWithErrorHandlingAsync } = useErrorHandling()
@@ -74,6 +76,8 @@ function useSubscriptionInternal() {
     () => `$${MONTHLY_SUBSCRIPTION_PRICE.toFixed(0)}`
   )
 
+  const buildApiUrl = (path: string) => `${getComfyApiBaseUrl()}${path}`
+
   const fetchStatus = wrapWithErrorHandlingAsync(
     fetchSubscriptionStatus,
     reportError
@@ -98,11 +102,24 @@ function useSubscriptionInternal() {
       useTelemetry()?.trackSubscription('modal_opened')
     }
 
-    void dialogService.showSubscriptionRequiredDialog()
+    void showSubscriptionRequiredDialog()
   }
+
+  const shouldWatchCancellation = (): boolean =>
+    Boolean(isCloud && window.__CONFIG__?.subscription_required)
+
+  const { startCancellationWatcher, stopCancellationWatcher } =
+    useSubscriptionCancellationWatcher({
+      fetchStatus,
+      isActiveSubscription: isSubscribedOrIsNotCloud,
+      subscriptionStatus,
+      telemetry,
+      shouldWatchCancellation
+    })
 
   const manageSubscription = async () => {
     await accessBillingPortal()
+    startCancellationWatcher()
   }
 
   const requireActiveSubscription = async (): Promise<void> => {
@@ -114,7 +131,7 @@ function useSubscriptionInternal() {
   }
 
   const handleViewUsageHistory = () => {
-    window.open('https://platform.comfy.org/profile/usage', '_blank')
+    window.open(`${getComfyPlatformBaseUrl()}/profile/usage`, '_blank')
   }
 
   const handleLearnMore = () => {
@@ -136,7 +153,7 @@ function useSubscriptionInternal() {
     }
 
     const response = await fetch(
-      `${COMFY_API_BASE_URL}/customers/cloud-subscription-status`,
+      buildApiUrl('/customers/cloud-subscription-status'),
       {
         headers: {
           ...authHeader,
@@ -166,6 +183,7 @@ function useSubscriptionInternal() {
         await fetchSubscriptionStatus()
       } else {
         subscriptionStatus.value = null
+        stopCancellationWatcher()
       }
     },
     { immediate: true }
@@ -181,7 +199,7 @@ function useSubscriptionInternal() {
       }
 
       const response = await fetch(
-        `${COMFY_API_BASE_URL}/customers/cloud-subscription-checkout`,
+        buildApiUrl('/customers/cloud-subscription-checkout'),
         {
           method: 'POST',
           headers: {

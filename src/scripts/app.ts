@@ -78,7 +78,7 @@ import {
   findLegacyRerouteNodes,
   noNativeReroutes
 } from '@/utils/migration/migrateReroute'
-import { getSelectedModelsMetadata } from '@/utils/modelMetadataUtil'
+import { getSelectedModelsMetadata } from '@/workbench/utils/modelMetadataUtil'
 import { deserialiseAndCreate } from '@/utils/vintageClipboard'
 
 import { type ComfyApi, PromptExecutionError, api } from './api'
@@ -825,6 +825,23 @@ export class ComfyApp {
         }
       }
     )
+
+    // Ensure subgraphs are scaled when entering them
+    this.canvas.canvas.addEventListener<'litegraph:set-graph'>(
+      'litegraph:set-graph',
+      (e) => {
+        const { newGraph, oldGraph } = e.detail
+        // Only scale when switching between graphs (not during initial setup)
+        // oldGraph is null/undefined during initial setup, so skip scaling then
+        if (oldGraph) {
+          ensureCorrectLayoutScale(
+            newGraph.extra.workflowRendererVersion,
+            newGraph
+          )
+        }
+      }
+    )
+
     registerProxyWidgets(this.canvas)
 
     this.graph.start()
@@ -1040,7 +1057,13 @@ export class ComfyApp {
     }
 
     let reset_invalid_values = false
-    if (!graphData) {
+    // Use explicit validation instead of falsy check to avoid replacing
+    // valid but falsy values (empty objects, 0, false, etc.)
+    if (
+      !graphData ||
+      typeof graphData !== 'object' ||
+      Array.isArray(graphData)
+    ) {
       graphData = defaultGraph
       reset_invalid_values = true
     }
@@ -1173,7 +1196,20 @@ export class ComfyApp {
       // @ts-expect-error Discrepancies between zod and litegraph - in progress
       this.graph.configure(graphData)
 
-      ensureCorrectLayoutScale()
+      // Save original renderer version before scaling (it gets modified during scaling)
+      const originalMainGraphRenderer = this.graph.extra.workflowRendererVersion
+
+      // Scale main graph
+      ensureCorrectLayoutScale(originalMainGraphRenderer)
+
+      // Scale all subgraphs that were loaded with the workflow
+      // Use original main graph renderer as fallback (not the modified one)
+      for (const subgraph of this.graph.subgraphs.values()) {
+        ensureCorrectLayoutScale(
+          subgraph.extra.workflowRendererVersion || originalMainGraphRenderer,
+          subgraph
+        )
+      }
 
       if (
         restore_view &&
@@ -1402,6 +1438,38 @@ export class ComfyApp {
       this.loadTemplateData({ templates })
     }
 
+    // Check workflow first - it should take priority over parameters
+    // when both are present (e.g., in ComfyUI-generated PNGs)
+    if (workflow) {
+      let workflowObj: ComfyWorkflowJSON | undefined = undefined
+      try {
+        workflowObj =
+          typeof workflow === 'string' ? JSON.parse(workflow) : workflow
+
+        // Only load workflow if parsing succeeded AND validation passed
+        if (
+          workflowObj &&
+          typeof workflowObj === 'object' &&
+          !Array.isArray(workflowObj)
+        ) {
+          await this.loadGraphData(workflowObj, true, true, fileName, {
+            openSource
+          })
+          return
+        } else {
+          console.error(
+            'Invalid workflow structure, trying parameters fallback'
+          )
+          this.showErrorOnFileLoad(file)
+        }
+      } catch (err) {
+        console.error('Failed to parse workflow:', err)
+        this.showErrorOnFileLoad(file)
+        // Fall through to check parameters as fallback
+      }
+    }
+
+    // Use parameters as fallback when no workflow exists
     if (parameters) {
       // Note: Not putting this in `importA1111` as it is mostly not used
       // by external callers, and `importA1111` has no access to `app`.
@@ -1411,15 +1479,6 @@ export class ComfyApp {
         fileName,
         this.graph.serialize() as unknown as ComfyWorkflowJSON
       )
-      return
-    }
-
-    if (workflow) {
-      const workflowObj =
-        typeof workflow === 'string' ? JSON.parse(workflow) : workflow
-      await this.loadGraphData(workflowObj, true, true, fileName, {
-        openSource
-      })
       return
     }
 

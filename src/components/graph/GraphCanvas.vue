@@ -14,7 +14,9 @@
           v-if="isNativeWindow() && workflowTabsPosition !== 'Topbar'"
           class="app-drag fixed top-0 left-0 z-10 h-[var(--comfy-topbar-height)] w-full"
         />
-        <div class="flex h-full items-center">
+        <div
+          class="flex h-full items-center border-b border-interface-stroke bg-comfy-menu-bg shadow-interface"
+        >
           <WorkflowTabs />
           <TopbarBadges />
         </div>
@@ -36,10 +38,13 @@
     <template v-if="showUI" #bottom-panel>
       <BottomPanel />
     </template>
+    <template v-if="showUI" #right-side-panel>
+      <NodePropertiesPanel />
+    </template>
     <template #graph-canvas-panel>
       <GraphCanvasMenu v-if="canvasMenuEnabled" class="pointer-events-auto" />
       <MiniMap
-        v-if="comfyAppReady && minimapEnabled && showUI"
+        v-if="comfyAppReady && minimapEnabled && betaMenuEnabled"
         class="pointer-events-auto"
       />
     </template>
@@ -55,7 +60,6 @@
   <TransformPane
     v-if="shouldRenderVueNodes && comfyApp.canvas && comfyAppReady"
     :canvas="comfyApp.canvas"
-    @transform-update="handleTransformUpdate"
     @wheel.capture="canvasInteractions.forwardEventToCanvas"
   >
     <!-- Vue nodes rendered based on graph nodes -->
@@ -72,6 +76,9 @@
       :data-node-id="nodeData.id"
     />
   </TransformPane>
+
+  <!-- Selection rectangle overlay for Vue nodes mode -->
+  <SelectionRectangle v-if="shouldRenderVueNodes && comfyAppReady" />
 
   <NodeTooltip v-if="tooltipEnabled" />
   <NodeSearchboxPopover ref="nodeSearchboxPopoverRef" />
@@ -110,13 +117,13 @@ import NodeTooltip from '@/components/graph/NodeTooltip.vue'
 import SelectionToolbox from '@/components/graph/SelectionToolbox.vue'
 import TitleEditor from '@/components/graph/TitleEditor.vue'
 import NodeOptions from '@/components/graph/selectionToolbox/NodeOptions.vue'
+import NodePropertiesPanel from '@/components/rightSidePanel/RightSidePanel.vue'
 import NodeSearchboxPopover from '@/components/searchbox/NodeSearchBoxPopover.vue'
 import SideToolbar from '@/components/sidebar/SideToolbar.vue'
 import TopbarBadges from '@/components/topbar/TopbarBadges.vue'
 import WorkflowTabs from '@/components/topbar/WorkflowTabs.vue'
 import { useChainCallback } from '@/composables/functional/useChainCallback'
 import type { VueNodeData } from '@/composables/graph/useGraphNodeManager'
-import { useViewportCulling } from '@/composables/graph/useViewportCulling'
 import { useVueNodeLifecycle } from '@/composables/graph/useVueNodeLifecycle'
 import { useNodeBadge } from '@/composables/node/useNodeBadge'
 import { useCanvasDrop } from '@/composables/useCanvasDrop'
@@ -125,7 +132,7 @@ import { useCopy } from '@/composables/useCopy'
 import { useGlobalLitegraph } from '@/composables/useGlobalLitegraph'
 import { usePaste } from '@/composables/usePaste'
 import { useVueFeatureFlags } from '@/composables/useVueFeatureFlags'
-import { i18n, t } from '@/i18n'
+import { mergeCustomNodesI18n, t } from '@/i18n'
 import { LiteGraph } from '@/lib/litegraph/src/litegraph'
 import { useLitegraphSettings } from '@/platform/settings/composables/useLitegraphSettings'
 import { CORE_SETTINGS } from '@/platform/settings/constants/coreSettings'
@@ -155,6 +162,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { isNativeWindow } from '@/utils/envUtil'
 
 import TryVueNodeBanner from '../topbar/TryVueNodeBanner.vue'
+import SelectionRectangle from './SelectionRectangle.vue'
 
 const emit = defineEmits<{
   ready: []
@@ -200,7 +208,6 @@ const { shouldRenderVueNodes } = useVueFeatureFlags()
 
 // Vue node system
 const vueNodeLifecycle = useVueNodeLifecycle()
-const { handleTransformUpdate } = useViewportCulling()
 
 const handleVueNodeLifecycleReset = async () => {
   if (shouldRenderVueNodes.value) {
@@ -384,9 +391,7 @@ useEventListener(
 const loadCustomNodesI18n = async () => {
   try {
     const i18nData = await api.getCustomNodesI18n()
-    Object.entries(i18nData).forEach(([locale, message]) => {
-      i18n.global.mergeLocaleMessage(locale, message)
-    })
+    mergeCustomNodesI18n(i18nData)
   } catch (error) {
     console.error('Failed to load custom nodes i18n', error)
   }
@@ -452,9 +457,12 @@ onMounted(async () => {
     'Comfy.CustomColorPalettes'
   )
 
-  // Restore workflow and workflow tabs state from storage
-  await workflowPersistence.restorePreviousWorkflow()
+  // Restore saved workflow and workflow tabs state
+  await workflowPersistence.initializeWorkflow()
   workflowPersistence.restoreWorkflowTabsState()
+
+  // Load template from URL if present
+  await workflowPersistence.loadTemplateFromUrlIfPresent()
 
   // Initialize release store to fetch releases from comfy-api (fire-and-forget)
   const { useReleaseStore } = await import(

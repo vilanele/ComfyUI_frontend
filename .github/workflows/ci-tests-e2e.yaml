@@ -1,5 +1,5 @@
+# Description: End-to-end testing with Playwright across multiple browsers, deploys test reports to Cloudflare Pages
 name: "CI: Tests E2E"
-description: "End-to-end testing with Playwright across multiple browsers, deploys test reports to Cloudflare Pages"
 
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
         with:
           include_build_step: true
       - name: Setup Playwright
-        uses: ./.github/actions/setup-playwright # Setup Playwright and cache browsers
+        uses: ./.github/actions/setup-playwright  # Setup Playwright and cache browsers
 
       # Save the entire workspace as cache for later test jobs to restore
       - name: Generate cache key
@@ -124,12 +124,19 @@ jobs:
       - name: Run Playwright tests (${{ matrix.browser }})
         id: playwright
         run: |
-          # Run tests with both HTML and JSON reporters
+          # Run tests with blob reporter first
+          pnpm exec playwright test --project=${{ matrix.browser }} --reporter=blob
+        env:
+          PLAYWRIGHT_BLOB_OUTPUT_DIR: ./blob-report
+
+      - name: Generate HTML and JSON reports
+        if: always()
+        run: |
+          # Generate HTML report from blob
+          pnpm exec playwright merge-reports --reporter=html ./blob-report
+          # Generate JSON report separately with explicit output path
           PLAYWRIGHT_JSON_OUTPUT_NAME=playwright-report/report.json \
-          pnpm exec playwright test --project=${{ matrix.browser }} \
-            --reporter=list \
-            --reporter=html \
-            --reporter=json
+          pnpm exec playwright merge-reports --reporter=json ./blob-report
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4

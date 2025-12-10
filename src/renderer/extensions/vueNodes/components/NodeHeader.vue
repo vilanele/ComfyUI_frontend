@@ -1,24 +1,24 @@
 <template>
   <div v-if="renderError" class="node-error p-4 text-sm text-red-500">
-    {{ $t('Node Header Error') }}
+    {{ st('nodeErrors.header', 'Node Header Error') }}
   </div>
   <div
     v-else
     :class="
       cn(
-        'lg-node-header p-4 rounded-t-2xl w-full min-w-50',
-        'bg-node-component-header-surface text-node-component-header',
-        collapsed && 'rounded-2xl'
+        'lg-node-header py-2 pl-2 pr-3 text-sm w-full min-w-0',
+        'text-node-component-header bg-node-component-header-surface',
+        headerShapeClass
       )
     "
     :style="headerStyle"
     :data-testid="`node-header-${nodeData?.id || ''}`"
     @dblclick="handleDoubleClick"
   >
-    <div class="flex items-center justify-between gap-2.5">
+    <div class="flex items-center justify-between gap-2.5 min-w-0">
       <!-- Collapse/Expand Button -->
-      <div class="relative grow-1 flex items-center gap-2.5">
-        <div class="lod-toggle flex shrink-0 items-center px-0.5">
+      <div class="relative grow-1 flex items-center gap-2.5 min-w-0 flex-1">
+        <div class="flex shrink-0 items-center px-0.5">
           <IconButton
             size="fit-content"
             type="transparent"
@@ -39,26 +39,35 @@
         </div>
 
         <div v-if="isSubgraphNode" class="icon-[comfy--workflow] size-4" />
-        <div v-if="isApiNode" class="icon-[lucide--dollar-sign] size-4" />
+        <div
+          v-if="isApiNode"
+          :class="
+            flags.subscriptionTiersEnabled
+              ? 'icon-[lucide--component]'
+              : 'icon-[lucide--dollar-sign]'
+          "
+          class="size-4"
+        />
 
         <!-- Node Title -->
         <div
           v-tooltip.top="tooltipConfig"
-          class="lod-toggle grow-1 items-center gap-2 truncate text-sm font-bold w-15"
+          class="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold"
           data-testid="node-title"
         >
-          <EditableText
-            :model-value="displayTitle"
-            :is-editing="isEditing"
-            :input-attrs="{ 'data-testid': 'node-title-input' }"
-            @edit="handleTitleEdit"
-            @cancel="handleTitleCancel"
-          />
+          <div class="truncate min-w-0 flex-1">
+            <EditableText
+              :model-value="displayTitle"
+              :is-editing="isEditing"
+              :input-attrs="{ 'data-testid': 'node-title-input' }"
+              @edit="handleTitleEdit"
+              @cancel="handleTitleCancel"
+            />
+          </div>
         </div>
-        <LODFallback />
       </div>
 
-      <div class="lod-toggle flex shrink-0 items-center justify-between gap-2">
+      <div class="flex shrink-0 items-center justify-between gap-2">
         <NodeBadge
           v-for="badge of nodeBadges"
           :key="badge.text"
@@ -75,13 +84,16 @@
           v-tooltip.top="enterSubgraphTooltipConfig"
           type="transparent"
           data-testid="subgraph-enter-button"
-          class="size-5"
+          class="ml-2 text-node-component-header h-5"
           @click.stop="handleEnterSubgraph"
           @dblclick.stop
         >
-          <i
-            class="icon-[lucide--picture-in-picture] size-5 text-node-component-header-icon"
-          ></i>
+          <div
+            class="min-w-max rounded-sm bg-node-component-surface px-1 py-0.5 text-xs flex items-center gap-1"
+          >
+            {{ $t('g.edit') }}
+            <i class="icon-[lucide--scaling] size-5"></i>
+          </div>
         </IconButton>
       </div>
     </div>
@@ -95,8 +107,9 @@ import IconButton from '@/components/button/IconButton.vue'
 import EditableText from '@/components/common/EditableText.vue'
 import type { VueNodeData } from '@/composables/graph/useGraphNodeManager'
 import { useErrorHandling } from '@/composables/useErrorHandling'
+import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { st } from '@/i18n'
-import { LGraphEventMode } from '@/lib/litegraph/src/litegraph'
+import { LGraphEventMode, RenderShape } from '@/lib/litegraph/src/litegraph'
 import { useSettingStore } from '@/platform/settings/settingStore'
 import NodeBadge from '@/renderer/extensions/vueNodes/components/NodeBadge.vue'
 import { useNodeTooltips } from '@/renderer/extensions/vueNodes/composables/useNodeTooltips'
@@ -110,7 +123,6 @@ import {
 } from '@/utils/graphTraversalUtil'
 import { cn } from '@/utils/tailwindUtil'
 
-import LODFallback from './LODFallback.vue'
 import type { NodeBadgeProps } from './NodeBadge.vue'
 
 interface NodeHeaderProps {
@@ -125,6 +137,8 @@ const emit = defineEmits<{
   'update:title': [newTitle: string]
   'enter-subgraph': []
 }>()
+
+const { flags } = useFeatureFlags()
 
 // Error boundary implementation
 const renderError = ref<string | null>(null)
@@ -202,6 +216,28 @@ const nodeBadges = computed<NodeBadgeProps[]>(() =>
 )
 const isPinned = computed(() => Boolean(nodeData?.flags?.pinned))
 const isApiNode = computed(() => Boolean(nodeData?.apiNode))
+
+const headerShapeClass = computed(() => {
+  if (collapsed) {
+    switch (nodeData?.shape) {
+      case RenderShape.BOX:
+        return 'rounded-none'
+      case RenderShape.CARD:
+        return 'rounded-tl-2xl rounded-br-2xl rounded-tr-none rounded-bl-none'
+      default:
+        return 'rounded-2xl'
+    }
+  }
+  switch (nodeData?.shape) {
+    case RenderShape.BOX:
+      return 'rounded-t-none'
+    case RenderShape.CARD:
+      return 'rounded-tl-2xl rounded-tr-none'
+    default:
+      return 'rounded-t-2xl'
+  }
+})
+
 // Subgraph detection
 const isSubgraphNode = computed(() => {
   if (!nodeData?.id) return false
