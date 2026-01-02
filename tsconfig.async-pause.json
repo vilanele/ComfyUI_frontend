@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "outDir": "/home/vilanele/comfy/ComfyUI-dev/custom_nodes/ComfyUI-AsyncPause/web/js/",
+    "rootDir": "./src/extensions/core/async-pause/",
+    "declaration": false,
+    "sourceMap": false,
+    "removeComments": true,
+    "strict": true,
+    "noEmitOnError": false
+  },
+  "include": [
+    "src/extensions/core/async-pause/*.ts"
+  ],
+  "exclude": [
+    "src/extensions/core/async-pause/path.ts"
+  ]
+}

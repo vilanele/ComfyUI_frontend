@@ -25,6 +25,9 @@ import './uploadAudio'
 import './uploadImage'
 import './webcamCapture'
 import './widgetInputs'
+import './async-pause/async-pause'
+import './async-pause/notify-audio'
+import './async-pause/notify-toast'
 
 // Cloud-only extensions - tree-shaken in OSS builds
 if (isCloud) {
