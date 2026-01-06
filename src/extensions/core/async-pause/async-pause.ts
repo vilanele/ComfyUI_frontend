@@ -3,10 +3,11 @@ import { api } from '../../../scripts/api.js'
 import { app } from '../../../scripts/app.js'
 import { getNodeByExecutionId } from './traversal.js'
 import type { LGraphNode } from '@/lib/litegraph/src/LGraphNode'
+import { createFlashingButton } from './flashing-button.js'
+import type { DOMWidget } from '@/scripts/domWidget.js'
 
 type ExtendedNode = LGraphNode & {
   executionId: string
-  originalColor: string | undefined
   blinkingIntervalId: NodeJS.Timeout
 }
 type pauseEventDetail = { executionId: string }
@@ -31,16 +32,23 @@ function enteringPauseLoopHandler(event: CustomEvent) {
   if (!app.extensionManager.setting.get('AsyncPause.Blink')) {
     return
   }
-  ;(node as ExtendedNode).originalColor = node.color
   let on = true
   const blinkingColor = `#${
     app.extensionManager.setting.get('AsyncPause.BlinkingColor') as string
   }`
+  const flashing_ctn_button = node.widgets?.find(
+    (w) => w.name == 'continue'
+  ) as DOMWidget<HTMLButtonElement, string>
+  ;(
+    flashing_ctn_button.element as HTMLButtonElement & { blinking: boolean }
+  ).blinking = true
   node.blinkingIntervalId = setInterval(() => {
     on = !on
-    node.color = on ? blinkingColor : node.originalColor
+    flashing_ctn_button.element.style.background = on
+      ? blinkingColor
+      : 'var(--component-node-widget-background)'
   }, app.extensionManager.setting.get('AsyncPause.BlinkingInterval'))
-  node.color = blinkingColor
+  flashing_ctn_button.element.style.background = blinkingColor
 }
 
 function leavingPauseLoopHandler(event: CustomEvent) {
@@ -49,7 +57,14 @@ function leavingPauseLoopHandler(event: CustomEvent) {
     return
   }
   clearInterval(node.blinkingIntervalId)
-  node.color = (node as ExtendedNode).originalColor
+  const flashing_ctn_button = node.widgets?.find(
+    (w) => w.name == 'continue'
+  ) as DOMWidget<HTMLButtonElement, string>
+  flashing_ctn_button.element.style.background =
+    'var(--component-node-widget-background)'
+  ;(
+    flashing_ctn_button.element as HTMLButtonElement & { blinking: boolean }
+  ).blinking = false
 }
 
 // @ts-ignore
@@ -128,34 +143,25 @@ app.registerExtension({
         node.removeWidget(force_pause_widget)
       }
 
-      const continue_btn = node.addWidget(
-        'button',
-        'continue',
-        '',
-        async () => {
-          const extendedNode = node as ExtendedNode
-          const response: Response = await api.fetchApi(
-            '/async_pause/continue',
-            {
-              method: 'POST',
-              body: JSON.stringify({
-                executionId: extendedNode.executionId
-              })
-            }
-          )
-          if (response.status != 200) {
-            app.extensionManager.toast.add({
-              severity: 'error',
-              summary: 'Pause node',
-              detail: 'Internal server error',
-              life: 3000
-            })
-          }
-        },
-        { serialize: false }
-      )
-      continue_btn.label = 'continue'
-      continue_btn.tooltip = 'Continue execution of following nodes'
+      const dom_flashing_btn = createFlashingButton()
+      node.addDOMWidget('continue', 'custom', dom_flashing_btn)
+      dom_flashing_btn.onclick = async () => {
+        const extendedNode = node as ExtendedNode
+        const response: Response = await api.fetchApi('/async_pause/continue', {
+          method: 'POST',
+          body: JSON.stringify({
+            executionId: extendedNode.executionId
+          })
+        })
+        if (response.status != 200) {
+          app.extensionManager.toast.add({
+            severity: 'error',
+            summary: 'Pause node',
+            detail: 'Internal server error',
+            life: 3000
+          })
+        }
+      }
 
       if (app.extensionManager.setting.get('AsyncPause.CancelButton')) {
         const cancel_btn = node.addWidget('button', 'cancel', '', () => {
