@@ -120,7 +120,7 @@ app.registerExtension({
       name: 'Blinking',
       type: 'boolean',
       tooltip: 'Make the node blink while waiting for user interaction',
-      defaultValue: false,
+      defaultValue: true,
       category: ['Async Pause', 'Pause node', 'pause.blinking']
     },
     {
