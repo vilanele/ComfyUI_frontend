@@ -25,7 +25,7 @@ import './uploadAudio'
 import './uploadImage'
 import './webcamCapture'
 import './widgetInputs'
-import './test'
+import './test/test'
 
 // Cloud-only extensions - tree-shaken in OSS builds
 if (isCloud) {
